@@ -261,10 +261,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                     location: 'dm'
                 })
             }).then(r => r.json()).then(data => {
-                if (!data?.content) return;
+                const burst: Array<{ content: string }> = data?.messages;
+                if (!burst?.length) return;
+
                 const elapsed = Date.now() - tStart;
                 const remaining = Math.max(0, tDelay - elapsed);
+                const BUBBLE_GAP = 800; // ms between each bubble in a burst
 
+                // First bubble: show at `remaining`, mark 已讀, apply PAD delta
                 setTimeout(() => {
                     setSession(prev => {
                         if (!prev) return null;
@@ -282,23 +286,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                             );
                         }
 
-                        const charMsg: Message = {
+                        const firstBubble: Message = {
                             id: generateId(),
                             chatId,
                             senderType: 'character',
                             senderId: chatId,
-                            content: data.content,
+                            content: burst[0].content,
                             expressionKey: data.expressionKey,
                             createdAt: new Date()
                         };
 
-                        // 同步更新 PAD（若 API 一併回傳了）
+                        // 同步更新 PAD（只在第一則套用，避免重複計算）
                         if (data.padDelta) {
                             const old = prev.characterStates[chatId];
                             const d = data.padDelta;
                             return {
                                 ...prev,
-                                messages: [...msgs, charMsg],
+                                messages: [...msgs, firstBubble],
                                 characterStates: {
                                     ...prev.characterStates,
                                     [chatId]: {
@@ -312,12 +316,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                                 }
                             };
                         }
-                        return { ...prev, messages: [...msgs, charMsg] };
+                        return { ...prev, messages: [...msgs, firstBubble] };
                     });
-
-                    // 回覆後重新計時 nudge
-                    vtScheduleNudge(chatId, chatId, 45);
                 }, remaining);
+
+                // Remaining bubbles: stagger at BUBBLE_GAP intervals
+                burst.slice(1).forEach((bubble, i) => {
+                    setTimeout(() => {
+                        setSession(prev => prev ? {
+                            ...prev,
+                            messages: [...prev.messages, {
+                                id: generateId(),
+                                chatId,
+                                senderType: 'character',
+                                senderId: chatId,
+                                content: bubble.content,
+                                expressionKey: data.expressionKey,
+                                createdAt: new Date()
+                            } as Message]
+                        } : null);
+                    }, remaining + (i + 1) * BUBBLE_GAP);
+                });
+
+                // 所有泡泡顯示完後才開始 nudge 計時
+                const totalDelay = remaining + (burst.length - 1) * BUBBLE_GAP;
+                setTimeout(() => vtScheduleNudge(chatId, chatId, 45), totalDelay);
             }).catch(e => console.error('[F1] DM response error', e));
 
             // F3 + F5 平行背景執行

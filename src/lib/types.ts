@@ -252,9 +252,21 @@ export interface PADDelta {
   d: number;
 }
 
+// A single message bubble in a character's response burst
+export interface MessageBubble {
+  content: string;
+  type: 'text' | 'sticker';
+}
+
+// F1 output: 1–4 message bubbles sent in one "burst"
+export interface CharacterMessageBurst {
+  messages: MessageBubble[];
+  expressionKey?: string;
+}
+
 // API Response types
 export interface GenerateResponseResult {
-  content: string;
+  messages: MessageBubble[];
   padDelta: PADDelta;
   goalAchieved: boolean;
   expressionKey?: string;

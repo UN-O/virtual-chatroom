@@ -124,7 +124,7 @@ async function handleRespond(body: {
   ]);
 
   return Response.json({
-    content: generationResult.content,
+    messages: generationResult.messages,
     expressionKey: generationResult.expressionKey || 'neutral',
     padDelta: analysisResult.padDelta,
     emotionTag: analysisResult.emotionTag,
