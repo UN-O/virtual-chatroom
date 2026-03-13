@@ -8,7 +8,7 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import type { LanguageModelV1 } from 'ai';
+import type { LanguageModel } from 'ai';
 
 export type LLMProvider = 'openai' | 'google';
 
@@ -57,14 +57,14 @@ export function getLLMProvider(): LLMProvider {
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
     return 'google';
   }
-  return 'openai';
+  return 'google';
 }
 
 /**
  * Get the model instance for AI SDK 6
- * Returns a LanguageModelV1 instance from the appropriate provider
+ * Returns a LanguageModel instance from the appropriate provider
  */
-export function getModel(): LanguageModelV1 {
+export function getModel(): LanguageModel {
   const provider = getLLMProvider();
   
   if (provider === 'openai') {
@@ -77,7 +77,7 @@ export function getModel(): LanguageModelV1 {
 /**
  * Get a specific provider's model (useful for fallback)
  */
-export function getModelByProvider(provider: LLMProvider): LanguageModelV1 {
+export function getModelByProvider(provider: LLMProvider): LanguageModel {
   if (provider === 'openai') {
     return getOpenAI()(LLM_CONFIG.models.openai);
   }

@@ -2,6 +2,7 @@ import { generateText } from 'ai';
 import type { Character, PAD, Message } from '../types';
 import { describePADState } from '../engine/pad';
 import { getModel, getLLMProvider, LLM_CONFIG } from './config';
+import { GoogleLanguageModelOptions } from '@ai-sdk/google';
 
 /**
  * F1: llmGenerateCharacterMessage
@@ -10,45 +11,46 @@ import { getModel, getLLMProvider, LLM_CONFIG } from './config';
  * Trigger: /api/event/phase-start, /api/chat/send (DM)
  */
 export async function llmGenerateCharacterMessage(input: {
-  character: Character;
-  state: { pad: PAD; memory: string };
-  situation: {
-    phaseGoal: string;
-    triggerDirection: string;
-    chatHistory: Message[];
-    isOnline: boolean;
-    location: 'dm' | 'group';
-  };
-}): Promise<{ content: string; expressionKey?: string }> {
-  const { character, state, situation } = input;
-  
-  const systemPrompt = buildGeneratorPrompt(character, state, situation);
-  
-  // Build messages from recent chat history (last 10 messages)
-  const recentHistory = situation.chatHistory.slice(-10);
-  const messages = recentHistory.map(msg => ({
-    role: msg.senderType === 'player' ? 'user' as const : 'assistant' as const,
-    content: msg.content
-  }));
-
-  try {
-    const result = await generateText({
-      model: getModel(),
-      system: systemPrompt,
-      messages: messages.length > 0 ? messages : undefined,
-      prompt: messages.length === 0 ? `根據情境，主動發送訊息。方向提示：${situation.triggerDirection}` : undefined,
-      maxOutputTokens: LLM_CONFIG.maxOutputTokens,
-      temperature: LLM_CONFIG.temperature,
-    });
-
-    return {
-      content: result.text.trim(),
-      expressionKey: getExpressionKey(state.pad),
+    character: Character;
+    state: { pad: PAD; memory: string };
+    situation: {
+        phaseGoal: string;
+        triggerDirection: string;
+        chatHistory: Message[];
+        isOnline: boolean;
+        location: 'dm' | 'group';
     };
-  } catch (error) {
-    console.error('[F1] Error generating character message:', error);
-    return getFallbackMessage(character, situation);
-  }
+}): Promise<{ content: string; expressionKey?: string }> {
+    const { character, state, situation } = input;
+
+    const systemPrompt = buildGeneratorPrompt(character, state, situation);
+
+    try {
+        const { text } = await generateText({
+            model: getModel(),
+            system: systemPrompt,
+            prompt: situation.triggerDirection
+                ? `根據對話歷史進行回應。方向提示：${situation.triggerDirection}`
+                : '請根據對話歷史回應。',
+            providerOptions: {
+                google: {
+                    thinkingConfig: {
+                        thinkingBudget: 0,
+                    },
+                } satisfies GoogleLanguageModelOptions,
+            }
+        });
+        console.log(`[F1] input system:`, systemPrompt);
+        console.log(`[F1] Generated message for ${character.profile.name}:`, text);
+
+        return {
+            content: text.trim(),
+            expressionKey: getExpressionKey(state.pad),
+        };
+    } catch (error) {
+        console.error('[F1] Error generating character message:', error);
+        return getFallbackMessage(character, situation);
+    }
 }
 
 /**
@@ -58,74 +60,76 @@ export async function llmGenerateCharacterMessage(input: {
  * Trigger: /api/event/char-respond
  */
 export async function llmGenerateGroupResponse(input: {
-  character: Character;
-  state: { pad: PAD; memory: string };
-  situation: {
-    phaseGoal: string;
-    groupHistory: Message[];
-    isOnline: boolean;
-    urgency: 'low' | 'medium' | 'high';
-  };
+    character: Character;
+    state: { pad: PAD; memory: string };
+    situation: {
+        phaseGoal: string;
+        groupHistory: Message[];
+        isOnline: boolean;
+        urgency: 'low' | 'medium' | 'high';
+    };
 }): Promise<{ content: string; expressionKey?: string }> {
-  const { character, state, situation } = input;
-  
-  const urgencyHint = {
-    low: '不急，可以隨意回應',
-    medium: '正常回應',
-    high: '需要盡快回應，可能有重要的事'
-  }[situation.urgency];
+    const { character, state, situation } = input;
 
-  const systemPrompt = `${buildGeneratorPrompt(character, state, {
-    phaseGoal: situation.phaseGoal,
-    triggerDirection: '',
-    chatHistory: situation.groupHistory,
-    isOnline: situation.isOnline,
-    location: 'group'
-  })}
+    const urgencyHint = {
+        low: '不急，可以隨意回應',
+        medium: '正常回應',
+        high: '需要盡快回應，可能有重要的事'
+    }[situation.urgency];
+
+    // ...existing code...
+    const systemPrompt = `${buildGeneratorPrompt(character, state, {
+        phaseGoal: situation.phaseGoal,
+        triggerDirection: '',
+        chatHistory: situation.groupHistory,
+        isOnline: situation.isOnline,
+        location: 'group'
+    })}
 
 ## 緊迫程度
 ${urgencyHint}`;
 
-  const recentHistory = situation.groupHistory.slice(-15);
-  const messages = recentHistory.map(msg => ({
-    role: msg.senderType === 'player' ? 'user' as const : 'assistant' as const,
-    content: msg.senderId === character.id ? msg.content : `[${msg.senderId ? '其他人' : '玩家'}]: ${msg.content}`
-  }));
+    // const recentHistory = situation.groupHistory.slice(-15);
+    // const messages = recentHistory.map(msg => ({
+    //   role: msg.senderType === 'player' ? 'user' as const : 'assistant' as const,
+    //   content: msg.senderId === character.id ? msg.content : `[${msg.senderId ? '其他人' : '玩家'}]: ${msg.content}`
+    // }));
 
-  try {
-    const result = await generateText({
-      model: getModel(),
-      system: systemPrompt,
-      messages,
-      maxOutputTokens: LLM_CONFIG.maxOutputTokens,
-      temperature: LLM_CONFIG.temperature,
-    });
+    try {
+        const result = await generateText({
+            model: getModel(),
+            system: systemPrompt,
+            prompt: `請參考群組對話，以 ${character.profile.name} 的身分進行回應。`,
+        });
 
-    return {
-      content: result.text.trim(),
-      expressionKey: getExpressionKey(state.pad),
-    };
-  } catch (error) {
-    console.error('[F2] Error generating group response:', error);
-    return { content: getSimpleFallback(character) };
-  }
+        console.log(`[F2] Generated group response for ${character.profile.name}:`, result.text.trim());
+
+        return {
+            content: result.text.trim(),
+            expressionKey: getExpressionKey(state.pad),
+            // ...existing code...
+        };
+    } catch (error) {
+        console.error('[F2] Error generating group response:', error);
+        return { content: getSimpleFallback(character) };
+    }
 }
 
 /**
  * Build the Generator system prompt
  */
 function buildGeneratorPrompt(
-  character: Character,
-  state: { pad: PAD; memory: string },
-  situation: {
-    phaseGoal: string;
-    triggerDirection: string;
-    chatHistory: Message[];
-    isOnline: boolean;
-    location: 'dm' | 'group';
-  }
+    character: Character,
+    state: { pad: PAD; memory: string },
+    situation: {
+        phaseGoal: string;
+        triggerDirection: string;
+        chatHistory: Message[];
+        isOnline: boolean;
+        location: 'dm' | 'group';
+    }
 ): string {
-  return `## 你是誰
+    return `## 你是誰
 ${character.profile.name}，${character.profile.age} 歲。
 ${character.profile.description}
 
@@ -157,44 +161,62 @@ ${situation.triggerDirection ? `方向提示：${situation.triggerDirection}` : 
 - 完全以角色身份說話，不要跳出角色
 - 回覆要簡短自然，像真實聊天（通常 1-3 句話）
 - 不要使用表情符號，除非角色真的會用
-- 用繁體中文回覆`;
+- 用繁體中文回覆
+
+## 對話紀錄
+${formatChatHistory(situation.chatHistory, character, situation.location)}`;
 }
 
 function getExpressionKey(pad: PAD): string {
-  if (pad.p > 0.4) return 'happy';
-  if (pad.p < -0.3 && pad.a > 0.5) return 'angry';
-  if (pad.p < -0.2) return 'sad';
-  if (pad.a > 0.6) return 'surprised';
-  return 'neutral';
+    if (pad.p > 0.4) return 'happy';
+    if (pad.p < -0.3 && pad.a > 0.5) return 'angry';
+    if (pad.p < -0.2) return 'sad';
+    if (pad.a > 0.6) return 'surprised';
+    return 'neutral';
 }
 
 function getFallbackMessage(
-  character: Character,
-  situation: { location: 'dm' | 'group'; triggerDirection: string }
+    character: Character,
+    situation: { location: 'dm' | 'group'; triggerDirection: string }
 ): { content: string; expressionKey: string } {
-  // Hardcoded fallbacks based on character and situation
-  if (character.id === 'char_boss') {
-    if (situation.triggerDirection.includes('Q3')) {
-      return { content: '今天下午開會需要 Q3 業績摘要，下班前給我。', expressionKey: 'neutral' };
+    // Hardcoded fallbacks based on character and situation
+    if (character.id === 'char_boss') {
+        if (situation.triggerDirection.includes('Q3')) {
+            return { content: '今天下午開會需要 Q3 業績摘要，下班前給我。', expressionKey: 'neutral' };
+        }
+        if (situation.triggerDirection.includes('進度')) {
+            return { content: '報告進度？', expressionKey: 'neutral' };
+        }
+        return { content: '收到。', expressionKey: 'neutral' };
     }
-    if (situation.triggerDirection.includes('進度')) {
-      return { content: '報告進度？', expressionKey: 'neutral' };
+
+    if (character.id === 'char_coworker') {
+        if (situation.triggerDirection.includes('忙')) {
+            return { content: '我今天真的超忙的，下午還有兩個 call...', expressionKey: 'neutral' };
+        }
+        return { content: '嗯嗯～', expressionKey: 'neutral' };
     }
-    return { content: '收到。', expressionKey: 'neutral' };
-  }
-  
-  if (character.id === 'char_coworker') {
-    if (situation.triggerDirection.includes('忙')) {
-      return { content: '我今天真的超忙的，下午還有兩個 call...', expressionKey: 'neutral' };
-    }
-    return { content: '嗯嗯～', expressionKey: 'neutral' };
-  }
-  
-  return { content: '好。', expressionKey: 'neutral' };
+
+    return { content: '好。', expressionKey: 'neutral' };
 }
 
 function getSimpleFallback(character: Character): string {
-  if (character.id === 'char_boss') return '嗯。';
-  if (character.id === 'char_coworker') return '嗯嗯～';
-  return '好。';
+    if (character.id === 'char_boss') return '嗯。';
+    if (character.id === 'char_coworker') return '嗯嗯～';
+    return '好。';
 }
+
+function formatChatHistory(messages: Message[], character: Character, location: 'dm' | 'group'): string {
+    const limit = location === 'dm' ? 10 : 15;
+    const recent = messages.slice(-limit);
+    if (recent.length === 0) return '(無紀錄)';
+
+    return recent.map(msg => {
+        let roleLabel = '玩家';
+        if (msg.senderType === 'character') {
+            roleLabel = msg.senderId === character.id ? character.profile.name : '其他角色';
+        }
+        return `[${roleLabel}]: ${msg.content}`;
+    }).join('\n');
+}
+

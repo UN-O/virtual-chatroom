@@ -47,7 +47,7 @@ ${describePADState(currentPad)}
   ).join('\n');
 
   try {
-    const result = await generateText({
+    const { output } = await generateText({
       model: getModel(),
       system: systemPrompt,
       prompt: `最近對話：
@@ -56,8 +56,6 @@ ${recentContext}
 玩家最新訊息：「${playerMessage}」
 
 分析此訊息對角色的情緒影響。`,
-      maxOutputTokens: LLM_CONFIG.maxOutputTokens,
-      temperature: LLM_CONFIG.temperature,
       output: Output.object({
         schema: z.object({
           padDelta: z.object({
@@ -70,11 +68,12 @@ ${recentContext}
         }),
       }),
     });
+    console.log(`[F3] Analysis result for "${playerMessage}":`, output);
 
     return {
-      padDelta: result.object.padDelta,
-      traumaTriggered: result.object.traumaTriggered || undefined,
-      emotionTag: result.object.emotionTag,
+      padDelta: output.padDelta,
+      traumaTriggered: output.traumaTriggered || undefined,
+      emotionTag: output.emotionTag,
     };
   } catch (error) {
     console.error('[F3] Error analyzing player message:', error);
@@ -116,9 +115,9 @@ export async function llmUpdateMemory(input: {
 - 情緒數值變化：P ${newEvents.padDelta.p > 0 ? '+' : ''}${newEvents.padDelta.p.toFixed(2)}
 
 請更新我對玩家的記憶摘要：`,
-      maxOutputTokens: 150,
-      temperature: LLM_CONFIG.temperature,
     });
+
+    console.log(`[F4] Updated memory:`, result.text.trim());
 
     return { memory: result.text.trim() };
   } catch (error) {
@@ -159,8 +158,6 @@ export async function llmCheckGoalAchieved(input: {
 ${recentMessages}
 
 這個目的是否已達成？`,
-      maxOutputTokens: 100,
-      temperature: LLM_CONFIG.temperature,
       output: Output.object({
         schema: z.object({
           achieved: z.boolean(),
@@ -169,7 +166,9 @@ ${recentMessages}
       }),
     });
 
-    return result.object;
+    console.log(`[F5] Goal check result for "${input.goal}":`, result.output);
+
+    return result.output;
   } catch (error) {
     console.error('[F5] Error checking goal:', error);
     return checkGoalFallback(input);
@@ -214,8 +213,6 @@ export async function llmDecideGroupRespond(input: {
 ${recentMessages}
 
 我應該回覆嗎？緊迫程度如何？`,
-      maxOutputTokens: 100,
-      temperature: LLM_CONFIG.temperature,
       output: Output.object({
         schema: z.object({
           shouldRespond: z.boolean(),
@@ -226,9 +223,9 @@ ${recentMessages}
     });
 
     return {
-      shouldRespond: result.object.shouldRespond,
-      urgency: result.object.urgency || undefined,
-      reason: result.object.reason || undefined,
+      shouldRespond: result.output.shouldRespond,
+      urgency: result.output.urgency || undefined,
+      reason: result.output.reason || undefined,
     };
   } catch (error) {
     console.error('[F6] Error deciding group respond:', error);

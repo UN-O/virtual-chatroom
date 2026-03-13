@@ -91,25 +91,44 @@ async function handleRespond(body: {
         senderId: 'player',
         senderType: 'player' as const,
         content: playerMessage,
-        timestamp: new Date()
+        createdAt: new Date()
       }]
     : chatHistory;
 
-  const result = await llmGenerateCharacterMessage({
-    character,
-    state: { pad: currentPad, memory },
-    situation: {
-      phaseGoal,
-      triggerDirection,
-      chatHistory: fullHistory,
-      isOnline: true,
-      location
-    }
-  });
+  // Parallel execution: Generate response and analyze emotion (if player message exists)
+  const [generationResult, analysisResult] = await Promise.all([
+    llmGenerateCharacterMessage({
+      character,
+      state: { pad: currentPad, memory },
+      situation: {
+        phaseGoal,
+        triggerDirection,
+        chatHistory: fullHistory,
+        isOnline: true,
+        location
+      }
+    }),
+    playerMessage 
+      ? llmAnalyzePlayerMessage({
+          character,
+          currentPad,
+          playerMessage,
+          chatHistory,
+          traumaTriggers: character.psychology.traumas
+        })
+      : Promise.resolve({ 
+          padDelta: { p: 0, a: 0, d: 0 }, 
+          emotionTag: 'neutral', 
+          traumaTriggered: undefined 
+        })
+  ]);
 
   return Response.json({
-    content: result.content,
-    expressionKey: result.expressionKey || 'neutral'
+    content: generationResult.content,
+    expressionKey: generationResult.expressionKey || 'neutral',
+    padDelta: analysisResult.padDelta,
+    emotionTag: analysisResult.emotionTag,
+    goalAchieved: false
   });
 }
 
