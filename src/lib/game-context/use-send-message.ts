@@ -34,6 +34,8 @@ export interface UseSendMessageOptions {
     vtScheduleNudge: (characterId: string, chatId: string, delaySeconds: number) => void;
     /** React setState dispatcher */
     setSession: Dispatch<SetStateAction<ClientSession | null>>;
+    /** 玩家回覆後重置某個 chatId 的 nudge 計數 */
+    resetNudgeCount: (chatId: string) => void;
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ export function useSendMessage({
     vtCancelNudge,
     vtScheduleNudge,
     setSession,
+    resetNudgeCount,
 }: UseSendMessageOptions) {
     return useCallback(async (
         chatId: string,
@@ -81,7 +84,7 @@ export function useSendMessage({
         if (char) {
             handleDM({
                 chatId, content, cur,
-                getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession,
+                getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession, resetNudgeCount,
             });
             return;
         }
@@ -94,7 +97,7 @@ export function useSendMessage({
                 getVirtualTimeLabel, setSession,
             });
         }
-    }, [vtCancelNudge, vtScheduleNudge, sessionRef, getVirtualTimeLabel, setSession]);
+    }, [vtCancelNudge, vtScheduleNudge, sessionRef, getVirtualTimeLabel, setSession, resetNudgeCount]);
 }
 
 // ── DM Handler ────────────────────────────────────────────────────────────────
@@ -107,13 +110,15 @@ interface HandleDMOptions {
     vtCancelNudge: (characterId: string) => void;
     vtScheduleNudge: (characterId: string, chatId: string, delaySeconds: number) => void;
     setSession: Dispatch<SetStateAction<ClientSession | null>>;
+    resetNudgeCount: (chatId: string) => void;
 }
 
 function handleDM({
     chatId, content, cur,
-    getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession,
+    getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession, resetNudgeCount,
 }: HandleDMOptions) {
     vtCancelNudge(chatId);
+    resetNudgeCount(chatId);
 
     const charState = cur.characterStates[chatId];
     const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
