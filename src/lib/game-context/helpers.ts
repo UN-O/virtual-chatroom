@@ -67,6 +67,16 @@ export const initializeNewSession = (): ClientSession => {
 export const getChatRooms = (session: GameSession | null): ChatRoom[] => {
     if (!session) return [];
 
+    // 將 phase ID 對應到 OnlineSchedule 的鍵名
+    // phase IDs: morning, afternoon, ending_good, ending_bad
+    // OnlineSchedule keys: dawn, morning, noon, afternoon, evening, night
+    const phaseToScheduleKey = (phaseId: string): keyof import('../types').OnlineSchedule | null => {
+        if (phaseId === 'morning') return 'morning';
+        if (phaseId === 'afternoon') return 'afternoon';
+        if (phaseId.startsWith('ending')) return 'evening';
+        return null;
+    };
+
     // 每個角色對應一個 DM 聊天室
     const dmRooms: ChatRoom[] = Object.values(characters).map(char => {
         const lastMsg = session.messages
@@ -76,6 +86,9 @@ export const getChatRooms = (session: GameSession | null): ChatRoom[] => {
             )
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
+        const scheduleKey = phaseToScheduleKey(session.currentPhaseId);
+        const isOnline = scheduleKey != null ? char.onlineSchedule[scheduleKey] : false;
+
         return {
             id: char.id,
             type: 'dm',
@@ -84,11 +97,12 @@ export const getChatRooms = (session: GameSession | null): ChatRoom[] => {
             characterId: char.id,
             lastMessage: lastMsg?.content,
             lastMessageTime: lastMsg ? new Date(lastMsg.createdAt) : undefined,
-            unreadCount: 0
+            unreadCount: 0,
+            isOnline
         };
     });
 
-    // 每個群組對應一個群組聊天室
+    // 每個群組對應一個群組聊天室（群組永遠顯示為在線）
     const groupRooms: ChatRoom[] = groups.map(group => {
         const lastMsg = session.messages
             .filter(m => m.chatId === group.id)
@@ -102,7 +116,8 @@ export const getChatRooms = (session: GameSession | null): ChatRoom[] => {
             groupId: group.id,
             lastMessage: lastMsg?.content,
             lastMessageTime: lastMsg ? new Date(lastMsg.createdAt) : undefined,
-            unreadCount: 0
+            unreadCount: 0,
+            isOnline: true
         };
     });
 
