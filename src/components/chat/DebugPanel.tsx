@@ -161,28 +161,6 @@ export function DebugPanel() {
           </div>
         )}
 
-        {/* Typing States */}
-        {gameState.typingStates.length > 0 && (
-          <>
-            <SectionHeader
-              title="Typing"
-              expanded={expandedSections.events}
-              onToggle={() => toggleSection('events')}
-            />
-            {expandedSections.events && (
-              <div className="space-y-1">
-                {gameState.typingStates.map((state, i) => (
-                  <div key={i} className="rounded-md border border-border p-1 text-xs">
-                    <span className="font-medium">
-                      {characters[state.characterId]?.profile.name || state.characterId}
-                    </span>
-                    <span className="ml-1 text-muted-foreground">in {state.chatId}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
       </div>
     </div>
   );

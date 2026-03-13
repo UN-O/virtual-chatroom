@@ -190,6 +190,7 @@ export interface Message {
   content: string;
   stickerId?: string;
   expressionKey?: string;
+  readBy?: string[]; // character IDs that have read this message
   createdAt: Date;
 }
 
@@ -234,13 +235,6 @@ export interface ClientSession extends GameSession {
   version: number;
 }
 
-// Typing Indicator State
-export interface TypingState {
-  characterId: string;
-  chatId: string;
-  startedAt: Date;
-}
-
 // Scheduled Event (for virtual time engine)
 export interface ScheduledEvent {
   id: string;
@@ -282,7 +276,6 @@ export interface GameState {
   activeChatId: string | null;
   isLoading: boolean;
   canFastForward: boolean; // Computed: Check if phase goals are met
-  typingStates: TypingState[];
   pendingEvents: ScheduledEvent[];
   debugMode: boolean;
 }

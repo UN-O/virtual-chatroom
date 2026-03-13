@@ -1,6 +1,6 @@
 "use client"
 import { createContext, useContext } from 'react';
-import type { GameSession, ClientSession, GameState, ChatRoom, TypingState, Phase } from '../types';
+import type { GameSession, ClientSession, GameState, ChatRoom, Phase } from '../types';
 
 /**
  * GameContextType
@@ -14,7 +14,6 @@ export interface GameContextType {
     isLoading: boolean;
     activeChatId: string | null;       // 目前開啟的聊天室 ID
     chatRooms: ChatRoom[];             // DM + 群組的聊天室列表
-    typingStates: TypingState[];       // 正在打字的角色（由 VirtualTime hook 維護）
     debugMode: boolean;
 
     // ── 操作 ──────────────────────────────────────────────
@@ -29,18 +28,11 @@ export interface GameContextType {
     /** Debug 用：強制推進到下一個 phase */
     debugFastForward: () => void;
 
-    /** 排程 DM 角色回應（內部包裝 useVirtualTime） */
-    scheduleDMResponse: (characterId: string, delayMs: number) => void;
-    /** 排程群組角色回應（內部包裝 useVirtualTime） */
-    scheduleGroupResponse: (groupId: string, characterId: string, delayMs: number) => void;
-
     getCurrentPhase: () => Phase | undefined;
     advancePhase: () => void;
     toggleDebugMode: () => void;
 
     getCharacterName: (characterId: string) => string | null;
-    /** 回傳指定聊天室中目前正在打字的角色 ID 列表 */
-    getTypingCharacters: (chatId: string) => string[];
 }
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
