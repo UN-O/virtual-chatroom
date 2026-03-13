@@ -1,7 +1,7 @@
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
-import type { Character, PAD, Message, Trauma } from '../types';
-import { describePADState } from '../engine/pad';
+import type { Character, PAD, Message, Trauma } from '@/lib/types';
+import { describePADState } from '@/lib/engine/pad';
 import { getModel, getLLMProvider, LLM_CONFIG } from './config';
 
 /**

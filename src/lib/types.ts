@@ -58,7 +58,7 @@ export interface CharacterPsychology {
   };
 }
 
-// PAD Configuration
+// PAD Config
 export interface PADConfig {
   initial: PAD;
   sensitivity: {
@@ -217,6 +217,7 @@ export interface CharacterState {
 export interface GameSession {
   id: string;
   storyId: string;
+  userId: string;
   status: 'active' | 'completed';
   currentPhaseId: string;
   progressLabel: string;
@@ -225,6 +226,11 @@ export interface GameSession {
   messages: Message[];
   startedAt: Date;
   lastActiveAt: Date;
+}
+
+// Client Session (Storage optimized)
+export interface ClientSession extends GameSession {
+  version: number;
 }
 
 // Typing Indicator State
@@ -274,9 +280,14 @@ export interface GameState {
   chatRooms: ChatRoom[];
   activeChatId: string | null;
   isLoading: boolean;
-  canFastForward: boolean;
-  // New fields for virtual time engine
+  canFastForward: boolean; // Computed: Check if phase goals are met
   typingStates: TypingState[];
   pendingEvents: ScheduledEvent[];
   debugMode: boolean;
+}
+
+// Export initial types needed for Context that might be missing
+export interface TypingCharacter {
+  characterId: string;
+  chatId: string;
 }

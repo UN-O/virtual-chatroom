@@ -1,4 +1,4 @@
-import type { Character, PAD } from '../types';
+import type { Character, PAD } from '@/lib/types';
 
 /**
  * PAD Emotion Model Engine

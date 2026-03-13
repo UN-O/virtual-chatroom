@@ -1,6 +1,7 @@
 import { generateText } from 'ai';
-import type { Character, PAD, Message } from '../types';
-import { describePADState } from '../engine/pad';
+import { z } from 'zod'; // Added just in case
+import type { Character, PAD, Message } from '@/lib/types';
+import { describePADState } from '@/lib/engine/pad';
 import { getModel, getLLMProvider, LLM_CONFIG } from './config';
 import { GoogleLanguageModelOptions } from '@ai-sdk/google';
 
