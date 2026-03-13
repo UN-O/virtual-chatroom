@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useGame } from "@/lib/game-context";
 import { GameLayout } from "@/components/chat/GameLayout";
+import { Clock } from "lucide-react";
 
 export default function GamePage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
   const { loadSession, session, isLoading } = useGame();
-  
+
   // Track if we attempted to load
   const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
 
@@ -22,8 +23,9 @@ export default function GamePage() {
 
   if (isLoading || !hasAttemptedLoad) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-100 text-gray-500">
-        Loading Session {sessionId}...
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-muted-foreground">
+        <Clock className="h-8 w-8 animate-spin" />
+        <span className="text-sm">載入劇情中…</span>
       </div>
     );
   }
@@ -31,15 +33,15 @@ export default function GamePage() {
   // If loaded, but session is null or ID doesn't match => Not Found
   if (!session || session.id !== sessionId) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-6 bg-gray-50 text-center p-4">
+      <div className="flex h-screen flex-col items-center justify-center gap-6 bg-background text-center p-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">找不到遊戲存檔</h1>
-          <p className="mt-2 text-gray-600">Session ID: {sessionId}</p>
+          <h1 className="text-2xl font-bold text-foreground">找不到遊戲存檔</h1>
+          <p className="mt-2 text-muted-foreground font-mono text-sm">{sessionId}</p>
         </div>
-        
-        <a 
-          href="/" 
-          className="rounded-lg bg-blue-600 px-6 py-3 text-white shadow hover:bg-blue-700 transition"
+
+        <a
+          href="/"
+          className="rounded-lg bg-primary px-6 py-3 text-primary-foreground shadow hover:bg-primary/90 transition"
         >
           回到大廳
         </a>

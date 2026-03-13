@@ -60,7 +60,7 @@ export function TimeBar() {
   const remainingMins = Math.ceil(remainingMs / 60000);
 
   return (
-    <div className="border-b border-border bg-card px-4 py-3">
+    <div className="min-h-[56px] border-b border-border bg-card px-4 py-3">
       <div className="flex items-center gap-4">
         {/* Time Display */}
         <div className="flex items-center gap-2">
@@ -68,7 +68,7 @@ export function TimeBar() {
             <Clock className="h-5 w-5 text-[var(--time-badge-foreground)]" />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-bold text-foreground">
+            <span className="text-2xl font-bold text-foreground">
               {gameState.session.virtualTime}
             </span>
             <span className="text-xs text-muted-foreground">
@@ -80,7 +80,7 @@ export function TimeBar() {
         {/* Dual Progress Bars */}
         <div className="flex flex-1 flex-col gap-1.5">
           {/* Track 1: Story progress */}
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
             <span>劇情進度</span>
             <span>{Math.min(currentPhaseIndex + 1, totalPhases)} / {totalPhases}</span>
           </div>
@@ -102,7 +102,7 @@ export function TimeBar() {
                   剩 {remainingMins} 分鐘
                 </span>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={cn(
                     "h-full rounded-full transition-all duration-100",
@@ -128,8 +128,9 @@ export function TimeBar() {
             size="sm"
             className={cn(
               "gap-2",
-              gameState.canFastForward && "animate-pulse"
+              gameState.canFastForward && "animate-[ff-ready_2s_ease-in-out_infinite]"
             )}
+            title={!gameState.canFastForward ? "完成所有目標後才能快進" : undefined}
           >
             {isEndingPhase ? (
               <>
@@ -157,11 +158,11 @@ export function TimeBar() {
           onClick={toggleDebugMode}
           variant="ghost"
           size="icon"
+          aria-label="切換偵錯面板"
           className={cn(
             "h-8 w-8",
             gameState.debugMode && "bg-primary/10 text-primary"
           )}
-          title="Toggle Debug Panel"
         >
           <Bug className="h-4 w-4" />
         </Button>

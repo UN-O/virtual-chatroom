@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Send, Users, User, MoreVertical } from "lucide-react";
-import { characters } from "@/lib/story-data";
+import { characters, groups } from "@/lib/story-data";
 import { CharacterAvatar } from "@/components/chat/CharacterAvatar";
 
 // Player's universal sticker pack — hardcoded emoji set
@@ -141,14 +141,21 @@ export function ChatWindow() {
 
         <div className="flex flex-1 flex-col">
           <span className="font-medium">{activeChatRoom.name}</span>
-          {activeChatRoom.type === 'group' && (
-            <span className="text-xs opacity-80">3 位成員</span>
-          )}
+          {activeChatRoom.type === 'group' && (() => {
+            const group = groups.find((g) => g.id === activeChatRoom.id);
+            const memberCount = group ? group.members.length + 1 : 0;
+            return (
+              <span className="text-xs text-[var(--chat-header-foreground)] opacity-70">
+                {memberCount} 位成員
+              </span>
+            );
+          })()}
         </div>
 
         <Button
           variant="ghost"
           size="icon"
+          aria-label="更多選項"
           className="h-9 w-9 text-inherit hover:bg-white/10"
         >
           <MoreVertical className="h-5 w-5" />
@@ -211,7 +218,7 @@ export function ChatWindow() {
                   )}
                 >
                   {showName && senderName && (
-                    <span className="px-1 text-xs text-muted-foreground">
+                    <span className="px-1 text-xs font-medium text-muted-foreground">
                       {senderName}
                     </span>
                   )}
@@ -223,10 +230,10 @@ export function ChatWindow() {
                   ) : (
                     <div
                       className={cn(
-                        "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                        "rounded-xl px-3.5 py-2 text-sm leading-relaxed",
                         isPlayer
-                          ? "rounded-br-md bg-[var(--chat-bubble-self)] text-[var(--chat-bubble-self-foreground)]"
-                          : "rounded-bl-md bg-[var(--chat-bubble-other)] text-[var(--chat-bubble-other-foreground)] shadow-sm"
+                          ? "rounded-br-[4px] bg-[var(--chat-bubble-self)] text-[var(--chat-bubble-self-foreground)]"
+                          : "rounded-bl-[4px] bg-[var(--chat-bubble-other)] text-[var(--chat-bubble-other-foreground)] shadow-sm"
                       )}
                     >
                       {message.content}
