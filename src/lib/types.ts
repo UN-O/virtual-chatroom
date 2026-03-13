@@ -190,6 +190,7 @@ export interface Message {
   content: string;
   stickerId?: string;
   expressionKey?: string;
+  virtualTimeLabel?: string; // 顯示用虛擬時間（如 "09:05"）
   createdAt: Date;
 }
 

@@ -90,10 +90,12 @@ export function ChatWindow() {
     );
   }
 
-  const getAvatarForSender = (senderId: string | null) => {
+  const getAvatarForSender = (senderId: string | null, expressionKey?: string) => {
     if (!senderId) return null;
     const char = characters[senderId];
-    return char ? char.profile.avatarUrl : null;
+    if (!char) return null;
+    const key = expressionKey || 'neutral';
+    return char.profile.avatarExpressions[key] || char.profile.avatarUrl;
   };
 
   const getSenderInitial = (senderId: string | null) => {
@@ -167,9 +169,9 @@ export function ChatWindow() {
                   <div className="w-8 shrink-0">
                     {showAvatar && (
                       <Avatar className="h-8 w-8">
-                        <AvatarImage 
-                          src={getAvatarForSender(message.senderId) || undefined} 
-                          alt={senderName || "Character"} 
+                        <AvatarImage
+                          src={getAvatarForSender(message.senderId, message.expressionKey) || undefined}
+                          alt={senderName || "Character"}
                         />
                         <AvatarFallback className="bg-muted text-muted-foreground text-xs">
                           {getSenderInitial(message.senderId)}
@@ -202,7 +204,7 @@ export function ChatWindow() {
                     {message.content}
                   </div>
                   <span className="px-1 text-[10px] text-muted-foreground">
-                    {formatMessageTime(message.createdAt)}
+                    {message.virtualTimeLabel || formatMessageTime(message.createdAt)}
                   </span>
                 </div>
               </div>
@@ -238,7 +240,7 @@ export function ChatWindow() {
           />
           <Button
             onClick={handleSend}
-            disabled={!inputValue.trim() || gameState?.isLoading}
+            disabled={!inputValue.trim()}
             size="icon"
             className="h-10 w-10 shrink-0 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
           >
