@@ -12,6 +12,7 @@ import { characters } from "@/lib/story-data";
 export function ChatWindow() {
   const { gameState, sendMessage, setActiveChat, getCharacterName } = useGame();
   const [inputValue, setInputValue] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeChatRoom = gameState?.chatRooms.find(
@@ -28,17 +29,29 @@ export function ChatWindow() {
     -1
   );
 
-  // Auto scroll to bottom when new messages arrive
+  // Instant scroll to bottom when switching chat rooms
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+  }, [gameState?.activeChatId]);
+
+  // Smooth scroll to bottom when new messages arrive in current chat
+  useEffect(() => {
+    if (messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages.length]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || !gameState?.activeChatId) return;
-    
+    if (!inputValue.trim() || !gameState?.activeChatId || isSending) return;
+
+    setIsSending(true);
     const message = inputValue.trim();
     setInputValue("");
-    await sendMessage(gameState.activeChatId, message);
+    try {
+      await sendMessage(gameState.activeChatId, message);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -208,11 +221,12 @@ export function ChatWindow() {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="輸入訊息..."
+            disabled={isSending}
             className="flex-1 rounded-full border-input bg-secondary"
           />
           <Button
             onClick={handleSend}
-            disabled={!inputValue.trim() || gameState?.isLoading}
+            disabled={!inputValue.trim() || isSending}
             size="icon"
             className="h-10 w-10 shrink-0 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
           >
