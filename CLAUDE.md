@@ -195,6 +195,20 @@ Each character maintains a short-form `memory` string (2–3 sentences in Tradit
 
 ---
 
+## TODO 維護規則
+
+**每次完成任何程式碼修改後，必須同步更新 `TODO.md`。**
+
+具體規則：
+- 完成一個 TODO 項目 → 將對應條目改為 `- [x]`，並在後面補一行說明完成方式或 commit
+- 發現新的缺口或 bug → 立刻加入對應優先級的區塊（P0–P5）
+- 修改影響到完成度評估 → 更新底部「完成度概覽」表格的百分比與說明
+- 文件開頭的「更新日期」也要同步改
+
+不更新 TODO 的 PR 視為未完成。
+
+---
+
 ## Development Workflow
 
 ### Setup
