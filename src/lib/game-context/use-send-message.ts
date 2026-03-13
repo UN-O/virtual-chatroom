@@ -113,6 +113,14 @@ interface HandleDMOptions {
     resetNudgeCount: (chatId: string) => void;
 }
 
+/** 將 phase ID 對應到 OnlineSchedule 鍵名（與 helpers.ts 保持一致） */
+function getOnlineScheduleKey(phaseId: string): keyof import('../types').OnlineSchedule | null {
+    if (phaseId === 'morning') return 'morning';
+    if (phaseId === 'afternoon') return 'afternoon';
+    if (phaseId.startsWith('ending')) return 'evening';
+    return null;
+}
+
 function handleDM({
     chatId, content, cur,
     getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession, resetNudgeCount,
@@ -120,10 +128,37 @@ function handleDM({
     vtCancelNudge(chatId);
     resetNudgeCount(chatId);
 
+    const char = characters[chatId];
     const charState = cur.characterStates[chatId];
     const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
     const mission = currentPhase?.characterMissions.find(m => m.characterId === chatId);
     const tDelay = (mission?.responseDelaySeconds ?? 3) * 1000;
+
+    // 判斷角色是否在線（依當前 phase 對應的 onlineSchedule 時段）
+    const scheduleKey = getOnlineScheduleKey(cur.currentPhaseId);
+    const isOnline = char && scheduleKey != null ? char.onlineSchedule[scheduleKey] : true;
+
+    // 離線懲罰：玩家打擾離線角色，立即施加 PAD P -0.15 delta
+    if (!isOnline && charState) {
+        setSession(prev => {
+            if (!prev) return null;
+            const old = prev.characterStates[chatId];
+            if (!old) return prev;
+            return {
+                ...prev,
+                characterStates: {
+                    ...prev.characterStates,
+                    [chatId]: {
+                        ...old,
+                        pad: {
+                            ...old.pad,
+                            p: Math.max(-1, old.pad.p - 0.15)
+                        }
+                    }
+                }
+            };
+        });
+    }
 
     // 綜合 DM + 群組歷史作為角色的上下文
     const dmHistory = cur.messages.filter(m => m.chatId === chatId).slice(-10);
@@ -138,7 +173,9 @@ function handleDM({
 
     const tStart = Date.now();
 
-    // F1：立刻打 API，完成後等 remaining 才顯示
+    // F1：立刻打 API（內部同步執行 F3 analyze），完成後等 remaining 才顯示
+    // NOTE: action=respond already runs F3 internally and returns padDelta + emotionTag.
+    // We do NOT fire a separate action=analyze to avoid double-applying the PAD delta.
     fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -151,7 +188,8 @@ function handleDM({
             memory: charState?.memory || '',
             phaseGoal: mission?.goal || '',
             triggerDirection: mission?.triggerDirection || '',
-            location: 'dm'
+            location: 'dm',
+            isOnline
         })
     }).then(r => r.json()).then(data => {
         const burst: Array<{ content: string }> = data?.messages;
@@ -161,7 +199,7 @@ function handleDM({
         const remaining = Math.max(0, tDelay - elapsed);
         const BUBBLE_GAP = 800; // ms between each bubble in a burst
 
-        // First bubble: show at `remaining`, mark 已讀, apply PAD delta
+        // First bubble: show at `remaining`, mark 已讀, apply PAD delta (from F3 inside respond)
         setTimeout(() => {
             const vtLabel = getVirtualTimeLabel();
             setSession(prev => {
@@ -238,86 +276,67 @@ function handleDM({
         // 所有泡泡顯示完後才開始 nudge 計時
         const totalDelay = remaining + (burst.length - 1) * BUBBLE_GAP;
         setTimeout(() => vtScheduleNudge(chatId, chatId, 45), totalDelay);
-    }).catch(e => console.error('[F1] DM response error', e));
 
-    // F3 + F5 平行背景執行
-    if (charState) {
-        Promise.all([
-            // F3：分析 PAD delta
+        // F4：更新記憶（F3 的 emotionTag 已由 respond 回傳，直接使用）
+        if (charState && data.emotionTag) {
             fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: 'analyze',
+                    action: 'updateMemory',
                     characterId: chatId,
+                    previousMemory: charState.memory,
                     playerMessage: content,
-                    chatHistory: dmHistory,
-                    currentPad: charState.pad
+                    characterResponse: burst[0]?.content || '',
+                    padDelta: data.padDelta || { p: 0, a: 0, d: 0 },
+                    emotionTag: data.emotionTag
                 })
-            }).then(r => r.json()).catch(() => null),
-            // F5：檢查 goal（未達成且有 mission 才執行）
-            mission && !charState.goalAchieved
-                ? fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'checkGoal',
-                        goal: mission.goal,
-                        completionHint: mission.completionHint,
-                        chatHistory: combinedHistory,
-                        currentlyAchieved: false
-                    })
-                }).then(r => r.json()).catch(() => null)
-                : Promise.resolve(null)
-        ]).then(([analyzeResult, goalResult]) => {
-            setSession(prev => {
-                if (!prev) return null;
-                const old = prev.characterStates[chatId];
-                if (!old) return prev;
-                const d = analyzeResult?.padDelta || { p: 0, a: 0, d: 0 };
-                return {
-                    ...prev,
-                    characterStates: {
-                        ...prev.characterStates,
-                        [chatId]: {
-                            ...old,
-                            pad: {
-                                p: Math.max(-1, Math.min(1, old.pad.p + d.p)),
-                                a: Math.max(0, Math.min(1, old.pad.a + d.a)),
-                                d: Math.max(-1, Math.min(1, old.pad.d + d.d))
-                            },
-                            goalAchieved: goalResult?.achieved ?? old.goalAchieved
+            }).then(r => r.json()).then(res => {
+                if (res?.memory) {
+                    setSession(prev => prev ? {
+                        ...prev,
+                        characterStates: {
+                            ...prev.characterStates,
+                            [chatId]: { ...prev.characterStates[chatId], memory: res.memory }
                         }
-                    }
-                };
-            });
-            // F4：更新記憶（F3 完成後背景執行）
-            if (analyzeResult?.emotionTag) {
-                fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'updateMemory',
-                        characterId: chatId,
-                        previousMemory: charState.memory,
-                        playerMessage: content,
-                        characterResponse: '',
-                        padDelta: analyzeResult.padDelta || { p: 0, a: 0, d: 0 },
-                        emotionTag: analyzeResult.emotionTag
-                    })
-                }).then(r => r.json()).then(res => {
-                    if (res?.memory) {
-                        setSession(prev => prev ? {
-                            ...prev,
-                            characterStates: {
-                                ...prev.characterStates,
-                                [chatId]: { ...prev.characterStates[chatId], memory: res.memory }
+                    } : null);
+                }
+            }).catch(e => console.error('[F4] Memory update failed', e));
+        }
+    }).catch(e => console.error('[F1] DM response error', e));
+
+    // F5：背景執行 goal 檢查（未達成且有 mission 才執行）
+    // F3 已由 action=respond 內部執行，此處只需 F5。
+    if (charState && mission && !charState.goalAchieved) {
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'checkGoal',
+                goal: mission.goal,
+                completionHint: mission.completionHint,
+                chatHistory: combinedHistory,
+                currentlyAchieved: false
+            })
+        }).then(r => r.json()).then(goalResult => {
+            if (goalResult?.achieved) {
+                setSession(prev => {
+                    if (!prev) return null;
+                    const old = prev.characterStates[chatId];
+                    if (!old) return prev;
+                    return {
+                        ...prev,
+                        characterStates: {
+                            ...prev.characterStates,
+                            [chatId]: {
+                                ...old,
+                                goalAchieved: true
                             }
-                        } : null);
-                    }
-                }).catch(e => console.error('[F4] Memory update failed', e));
+                        }
+                    };
+                });
             }
-        }).catch(e => console.error('[F3/F5] Analysis failed', e));
+        }).catch(e => console.error('[F5] Goal check failed', e));
     }
 }
 
@@ -348,13 +367,11 @@ function handleGroup({
         const mission = currentPhase?.characterMissions.find(m => m.characterId === memberId);
         const tDelay = (mission?.responseDelaySeconds ?? 5) * 1000;
 
-        // 綜合群組歷史 + 該角色的 DM 歷史
-        const memberDmHistory = cur.messages.filter(m => m.chatId === memberId).slice(-10);
+        // 群組回應只使用群組歷史，避免 DM 頻道語境污染群組回覆
         const combinedHistory: Message[] = [
             ...groupHistory,
-            ...memberDmHistory,
             { id: 'temp', chatId, senderType: 'player' as const, senderId: 'player', content, createdAt: new Date() }
-        ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        ];
 
         const tStart = Date.now();
 

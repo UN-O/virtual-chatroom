@@ -61,13 +61,24 @@ export function usePhaseManager({
         const now = Date.now();
         phaseStartedAtRef.current = now;
         setPhaseStartedAt(now);
-        setSession(prev => prev ? {
-            ...prev,
-            currentPhaseId: nextPhase.id,
-            progressLabel: nextPhase.progressLabel,
-            virtualTime: nextPhase.virtualTime,
-            status: isEnding ? 'completed' : prev.status
-        } : null);
+        setSession(prev => {
+            if (!prev) return null;
+            // Reset all characters' goalAchieved to false so the new phase's goals start fresh
+            const resetCharacterStates = Object.fromEntries(
+                Object.entries(prev.characterStates).map(([id, state]) => [
+                    id,
+                    { ...state, goalAchieved: false }
+                ])
+            );
+            return {
+                ...prev,
+                currentPhaseId: nextPhase.id,
+                progressLabel: nextPhase.progressLabel,
+                virtualTime: nextPhase.virtualTime,
+                status: isEnding ? 'completed' : prev.status,
+                characterStates: resetCharacterStates
+            };
+        });
 
         try {
             const phaseStart = Date.now();

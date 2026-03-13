@@ -8,84 +8,75 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import type { LanguageModel } from 'ai';
 
-export type LLMProvider = 'openai' | 'google';
+export type LLMProvider = 'openai' | 'anthropic' | 'google';
 
-// Configuration
+// Configuration — priority: OpenAI > Anthropic > Google
 export const LLM_CONFIG = {
-  // Model IDs - using user specified models
   models: {
     openai: 'gpt-5-mini',
+    anthropic: 'claude-sonnet-4-6',
     google: 'gemini-2.5-flash',
   },
-  
-  // Generation settings
-  temperature: 0.8,
 } as const;
 
-// Create provider instances (lazy initialization)
+// Lazy provider instances
 let _openai: ReturnType<typeof createOpenAI> | null = null;
+let _anthropic: ReturnType<typeof createAnthropic> | null = null;
 let _google: ReturnType<typeof createGoogleGenerativeAI> | null = null;
 
 function getOpenAI() {
-  if (!_openai) {
-    _openai = createOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
+  if (!_openai) _openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
   return _openai;
 }
 
+function getAnthropic() {
+  if (!_anthropic) _anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _anthropic;
+}
+
 function getGoogle() {
-  if (!_google) {
-    _google = createGoogleGenerativeAI({
-      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    });
-  }
+  if (!_google) _google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
   return _google;
 }
 
 /**
- * Detect which provider is available based on environment variables
+ * Detect which provider to use based on environment variables.
+ * Priority: OpenAI > Anthropic > Google
  */
 export function getLLMProvider(): LLMProvider {
-  if (process.env.OPENAI_API_KEY) {
-    return 'openai';
-  }
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    return 'google';
-  }
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
   return 'google';
 }
 
 /**
- * Get the model instance for AI SDK 6
- * Returns a LanguageModel instance from the appropriate provider
+ * Get the model instance for AI SDK 6.
  */
 export function getModel(): LanguageModel {
   const provider = getLLMProvider();
-  
-  if (provider === 'openai') {
-    return getOpenAI()(LLM_CONFIG.models.openai);
-  }
-  
+  if (provider === 'openai') return getOpenAI()(LLM_CONFIG.models.openai);
+  if (provider === 'anthropic') return getAnthropic()(LLM_CONFIG.models.anthropic);
   return getGoogle()(LLM_CONFIG.models.google);
 }
 
 /**
- * Get a specific provider's model (useful for fallback)
+ * Get a specific provider's model.
  */
 export function getModelByProvider(provider: LLMProvider): LanguageModel {
-  if (provider === 'openai') {
-    return getOpenAI()(LLM_CONFIG.models.openai);
-  }
+  if (provider === 'openai') return getOpenAI()(LLM_CONFIG.models.openai);
+  if (provider === 'anthropic') return getAnthropic()(LLM_CONFIG.models.anthropic);
   return getGoogle()(LLM_CONFIG.models.google);
 }
 
 /**
- * Check if both providers are available (for fallback support)
+ * Check if a fallback provider is available.
  */
 export function hasFallbackProvider(): boolean {
-  return !!(process.env.OPENAI_API_KEY && process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+  const primary = getLLMProvider();
+  if (primary === 'openai') return !!(process.env.ANTHROPIC_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+  if (primary === 'anthropic') return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+  return false;
 }

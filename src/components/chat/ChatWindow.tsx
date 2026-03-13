@@ -8,12 +8,26 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Send, Users, User, MoreVertical } from "lucide-react";
-import { characters } from "@/lib/story-data";
+import { characters, groups } from "@/lib/story-data";
 import { CharacterAvatar } from "@/components/chat/CharacterAvatar";
+
+// Player's universal sticker pack — hardcoded emoji set
+const PLAYER_STICKERS = [
+  { id: "ps_thumbsup", emoji: "👍", label: "好的" },
+  { id: "ps_awkward",  emoji: "😅", label: "尷尬" },
+  { id: "ps_pray",     emoji: "🙏", label: "拜託" },
+  { id: "ps_nervous",  emoji: "😬", label: "緊張" },
+  { id: "ps_smile",    emoji: "😊", label: "開心" },
+  { id: "ps_sad",      emoji: "😔", label: "難過" },
+  { id: "ps_strong",   emoji: "💪", label: "加油" },
+  { id: "ps_think",    emoji: "🤔", label: "想一下" },
+];
+
 export function ChatWindow() {
   const { gameState, sendMessage, setActiveChat, getCharacterName } = useGame();
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeChatRoom = gameState?.chatRooms.find(
@@ -59,6 +73,17 @@ export function ChatWindow() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleSendSticker = async (emoji: string, stickerId: string) => {
+    if (!gameState?.activeChatId || isSending) return;
+    setShowStickerPicker(false);
+    setIsSending(true);
+    try {
+      await sendMessage(gameState.activeChatId, emoji, 'sticker', stickerId);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -116,14 +141,21 @@ export function ChatWindow() {
 
         <div className="flex flex-1 flex-col">
           <span className="font-medium">{activeChatRoom.name}</span>
-          {activeChatRoom.type === 'group' && (
-            <span className="text-xs opacity-80">3 位成員</span>
-          )}
+          {activeChatRoom.type === 'group' && (() => {
+            const group = groups.find((g) => g.id === activeChatRoom.id);
+            const memberCount = group ? group.members.length + 1 : 0;
+            return (
+              <span className="text-xs text-[var(--chat-header-foreground)] opacity-70">
+                {memberCount} 位成員
+              </span>
+            );
+          })()}
         </div>
 
         <Button
           variant="ghost"
           size="icon"
+          aria-label="更多選項"
           className="h-9 w-9 text-inherit hover:bg-white/10"
         >
           <MoreVertical className="h-5 w-5" />
@@ -186,20 +218,27 @@ export function ChatWindow() {
                   )}
                 >
                   {showName && senderName && (
-                    <span className="px-1 text-xs text-muted-foreground">
+                    <span className="px-1 text-xs font-medium text-muted-foreground">
                       {senderName}
                     </span>
                   )}
-                  <div
-                    className={cn(
-                      "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-                      isPlayer
-                        ? "rounded-br-md bg-[var(--chat-bubble-self)] text-[var(--chat-bubble-self-foreground)]"
-                        : "rounded-bl-md bg-[var(--chat-bubble-other)] text-[var(--chat-bubble-other-foreground)] shadow-sm"
-                    )}
-                  >
-                    {message.content}
-                  </div>
+                  {/* Sticker bubble: large emoji, no background bubble */}
+                  {(message.stickerId != null) ? (
+                    <div className="px-1 py-0.5 text-4xl leading-none">
+                      {message.content}
+                    </div>
+                  ) : (
+                    <div
+                      className={cn(
+                        "rounded-xl px-3.5 py-2 text-sm leading-relaxed",
+                        isPlayer
+                          ? "rounded-br-[4px] bg-[var(--chat-bubble-self)] text-[var(--chat-bubble-self-foreground)]"
+                          : "rounded-bl-[4px] bg-[var(--chat-bubble-other)] text-[var(--chat-bubble-other-foreground)] shadow-sm"
+                      )}
+                    >
+                      {message.content}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 px-1">
                     {showRead && (
                       <span className="text-[10px] text-muted-foreground">
@@ -223,7 +262,37 @@ export function ChatWindow() {
 
       {/* Input */}
       <div className="border-t border-border bg-card p-3">
+        {/* Sticker picker panel */}
+        {showStickerPicker && (
+          <div className="mb-2 flex flex-wrap gap-2 rounded-xl border border-border bg-secondary p-2">
+            {PLAYER_STICKERS.map((sticker) => (
+              <button
+                key={sticker.id}
+                onClick={() => handleSendSticker(sticker.emoji, sticker.id)}
+                disabled={isSending}
+                title={sticker.label}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-2xl transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                {sticker.emoji}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
+          {/* Sticker picker toggle button */}
+          <button
+            onClick={() => setShowStickerPicker((v) => !v)}
+            disabled={isSending}
+            title="貼圖"
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl transition-colors hover:bg-muted disabled:opacity-50",
+              showStickerPicker && "bg-muted"
+            )}
+          >
+            😊
+          </button>
+
           <Input
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}

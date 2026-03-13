@@ -10,8 +10,9 @@ import { GoogleLanguageModelOptions } from '@ai-sdk/google';
 const messageBurstSchema = z.object({
     messages: z.array(
         z.object({
-            content: z.string().describe('一則訊息泡泡的文字內容，通常 5–25 字'),
-            type: z.enum(['text', 'sticker']).describe('訊息類型，通常為 text'),
+            content: z.string().describe('一則訊息泡泡的文字內容，通常 5–25 字；type=sticker 時填入 emoji 字符本身，例如 😅'),
+            type: z.enum(['text', 'sticker']).describe('訊息類型；text 為一般文字，sticker 為單一 emoji 貼圖'),
+            emojiContent: z.string().optional().describe('emoji字符，type=sticker時使用，例如 😅；type=text時不填'),
         })
     ).min(1).max(4).describe('角色這次要傳的 1–4 則訊息泡泡，模擬 LINE 分則傳送的節奏'),
 });
@@ -186,6 +187,7 @@ ${state.memory || '還沒有特別的印象。'}
 場景：${locationLabel}
 本幕目標：${situation.phaseGoal}
 ${situation.triggerDirection ? `發訊方向：${situation.triggerDirection}` : ''}
+${!situation.isOnline ? `⚠️ 目前離線（休息中）：Andy 在你非上班/休息時傳訊給你，回應時語氣帶不悅或不情願，簡短冷淡即可。` : ''}
 
 # 對話紀錄
 ${formatChatHistory(situation.chatHistory, character)}
