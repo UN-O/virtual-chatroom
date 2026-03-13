@@ -1,6 +1,6 @@
 # TODO — Story Chat 距離 docs 的缺口分析
 
-> 分析日期：2026-03-13（更新：2026-03-13 branch claude/review-and-plan-4R7EZ — 群組頻道污染修正 + 離線 PAD 懲罰 + Anthropic Claude Sonnet 支援）
+> 分析日期：2026-03-13（更新：2026-03-13 branch claude/review-and-plan-4R7EZ — 群組頻道污染修正 + 離線 PAD 懲罰 + Anthropic Claude Sonnet 支援 + P_BUG 深度掃描）
 > 基準：`files/STORY_DESIGN.md` + **系統架構文件 v3**
 
 ---
