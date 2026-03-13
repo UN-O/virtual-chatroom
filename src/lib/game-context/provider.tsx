@@ -6,12 +6,16 @@
  * 負責將所有子模組的邏輯組裝成一個完整的 React Context Provider：
  *
  *  1. Session CRUD        — 建立、載入、刪除遊戲進度（LocalStorage）
- *  2. Virtual Time Engine — 透過 useVirtualTime hook 管理所有排程事件
- *     · onCharacterResponse → 呼叫 /api/chat，寫入訊息 + 更新 PAD
- *     · onNudge             → 呼叫 /api/event/nudge，寫入催促訊息
- *  3. Schedule Wrappers   — 包裝 hook API，對外保持簡單的 (id, delayMs) 介面
- *  4. sendMessage         → DM 或群組訊息發送 + 觸發角色回應排程
- *  5. Phase Management    → advancePhase（評估 branch conditions + 呼叫 phase-start API）
+ *  2. Nudge Engine        — 透過 useVirtualTime hook 管理 nudge 計時器
+ *  3. sendMessage         — DM 或群組訊息發送
+ *     · 立即呼叫 API（不等 t_delay 才打）
+ *     · API 回傳後：wait max(0, t_delay - elapsed) 才顯示 + 標記已讀
+ *     · 同步平行跑 F3（analyze）、F5（checkGoal）
+ *     · F3 完成後非同步跑 F4（updateMemory）
+ *  4. Phase Management    → advancePhase（評估 branch conditions + 呼叫 phase-start API）
+ *
+ *  Context 歷史設計：每個角色回應時，同時傳入 DM 歷史 + 群組歷史，
+ *  讓角色能綜合兩個聊天室的資訊來回應。
  */
 
 import React, {
@@ -28,6 +32,7 @@ import { generateId, initializeNewSession, getChatRooms } from './helpers';
 import { LocalSessionAdapter } from '../storage/local-adapter';
 import { storyPlot, characters, groups, allCharacterMissions } from '../story-data';
 import { areAllGoalsAchieved, determineNextPhase } from '../engine/phase';
+import { shouldRespond } from '../engine/pad';
 import { useVirtualTime } from '@/hooks/useVirtualTime';
 
 import type { ClientSession, Message } from '../types';
@@ -129,100 +134,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
     }, [session]);
 
-    // ── Virtual Time Engine ────────────────────────────────────────────────
+    // ── Nudge Engine ───────────────────────────────────────────────────────
     //
-    // useVirtualTime 負責所有計時排程（typing indicator、response delay、nudge）。
-    // 這裡只需提供三個 callback，hook 會在適當時機呼叫它們：
-    //   · onCharacterResponse：timer 到期，實際呼叫 LLM API 產生訊息
-    //   · onNudge：玩家久未回應，呼叫 nudge API 催促
-    //   · onTypingStart / onTypingEnd：hook 內部管理，外部不需操作
+    // useVirtualTime 只負責 nudge 計時器。
+    // 角色回應延遲改用 t_delay 模式（見 sendMessage）。
 
     const {
-        scheduleDMResponse: vtScheduleDM,
-        scheduleGroupResponses: vtScheduleGroup,
         scheduleNudge: vtScheduleNudge,
         cancelNudge: vtCancelNudge,
-        typingStates
     } = useVirtualTime({
         enabled: !!session && session.status === 'active',
-
-        onCharacterResponse: async (characterId, chatId) => {
-            const cur = sessionRef.current;
-            if (!cur) return;
-
-            const charState = cur.characterStates[characterId];
-            const character = characters[characterId];
-            if (!charState || !character) return;
-
-            // chatId 等於 characterId → DM；否則為群組
-            const isDM = chatId === characterId;
-            const chatHistory = cur.messages.filter(m => m.chatId === chatId).slice(-15);
-
-            const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
-            const mission = currentPhase?.characterMissions.find(m => m.characterId === characterId);
-
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'respond',
-                        characterId,
-                        playerMessage: isDM
-                            ? chatHistory.filter(m => m.senderType === 'player').slice(-1)[0]?.content
-                            : undefined,
-                        chatHistory,
-                        currentPad: charState.pad,
-                        memory: charState.memory || '',
-                        phaseGoal: mission?.goal || '',
-                        triggerDirection: isDM ? (mission?.triggerDirection || '') : '',
-                        location: isDM ? 'dm' : 'group'
-                    })
-                });
-                const data = await res.json();
-                if (!data.content) return;
-
-                setSession(prev => {
-                    if (!prev) return null;
-                    const newMsg: Message = {
-                        id: generateId(),
-                        chatId,
-                        senderType: 'character',
-                        senderId: characterId,
-                        content: data.content,
-                        expressionKey: data.expressionKey,
-                        createdAt: new Date()
-                    };
-                    // DM 才更新 PAD（群組回應不含情緒分析）
-                    if (isDM && data.padDelta) {
-                        const old = prev.characterStates[characterId];
-                        const d = data.padDelta;
-                        return {
-                            ...prev,
-                            messages: [...prev.messages, newMsg],
-                            characterStates: {
-                                ...prev.characterStates,
-                                [characterId]: {
-                                    ...old,
-                                    pad: {
-                                        p: Math.max(-1, Math.min(1, old.pad.p + d.p)),
-                                        a: Math.max(0, Math.min(1, old.pad.a + d.a)),
-                                        d: Math.max(-1, Math.min(1, old.pad.d + d.d))
-                                    }
-                                }
-                            }
-                        };
-                    }
-                    return { ...prev, messages: [...prev.messages, newMsg] };
-                });
-
-                // DM 回應後啟動 nudge 計時（45 秒無回應則催促）
-                if (isDM) vtScheduleNudge(characterId, chatId, 45);
-
-            } catch (e) {
-                console.error('[VirtualTime] onCharacterResponse error', e);
-            }
-        },
 
         onNudge: async (characterId, chatId) => {
             const cur = sessionRef.current;
@@ -240,7 +161,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                         characterState: cur.characterStates[characterId],
                         phaseGoal: currentPhase?.characterMissions
                             .find(m => m.characterId === characterId)?.goal || '',
-                        nudgeCount: 1 // TODO: 追蹤每角色的 nudge 次數
+                        nudgeCount: 1
                     })
                 });
                 const data = await res.json();
@@ -262,37 +183,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 console.error('[Nudge] Error', e);
             }
         },
-
-        onTypingStart: () => {}, // hook 已內部處理，外部不需操作
-        onTypingEnd: () => {}
     });
 
-    // ── Schedule Wrappers ──────────────────────────────────────────────────
-    //
-    // hook 的 API 需要完整的 Character 物件與秒數，
-    // 這裡包裝成 (characterId, delayMs) 供其他元件使用。
-
-    const scheduleDMResponse = useCallback((characterId: string, delayMs: number) => {
-        const char = characters[characterId];
-        if (!char) return;
-        const arousal = sessionRef.current?.characterStates[characterId]?.pad.a ?? 0.3;
-        vtScheduleDM(char, characterId, delayMs / 1000, arousal);
-    }, [vtScheduleDM]);
-
-    const scheduleGroupResponse = useCallback((groupId: string, characterId: string, delayMs: number) => {
-        const char = characters[characterId];
-        if (!char) return;
-        const arousal = sessionRef.current?.characterStates[characterId]?.pad.a ?? 0.3;
-        // vtScheduleGroup 內部會做 shouldRespond() 的機率判斷
-        vtScheduleGroup(
-            [char],
-            groupId,
-            { [characterId]: { pad: { a: arousal } } },
-            { [characterId]: delayMs / 1000 }
-        );
-    }, [vtScheduleGroup]);
-
     // ── Message Sending ────────────────────────────────────────────────────
+    //
+    // t_delay 模式：
+    //   1. 立即插入玩家訊息
+    //   2. 立即打 API（不等 t_delay 再打）
+    //   3. API 完成後：remaining = max(0, t_delay - elapsed)
+    //   4. setTimeout(remaining)：標記已讀 + 顯示角色訊息
 
     const sendMessage = useCallback(async (
         chatId: string,
@@ -321,22 +220,131 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
 
         const cur = sessionRef.current;
+        if (!cur) return;
 
-        // DM：取消 nudge 計時，排程角色回應 + 背景分析
+        // ── DM ──────────────────────────────────────────────────────────────
         const char = characters[chatId];
         if (char) {
             vtCancelNudge(chatId);
-            const charState = cur?.characterStates[chatId];
-            const arousal = charState?.pad.a ?? 0.3;
-            // F1：排程角色回覆（由 useVirtualTime → onCharacterResponse 觸發）
-            vtScheduleDM(char, chatId, 1.5, arousal);
+
+            const charState = cur.characterStates[chatId];
+            const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
+            const mission = currentPhase?.characterMissions.find(m => m.characterId === chatId);
+            const tDelay = (mission?.responseDelaySeconds ?? 3) * 1000;
+
+            // 綜合 DM + 群組歷史作為角色的上下文
+            const dmHistory = cur.messages.filter(m => m.chatId === chatId).slice(-10);
+            const groupHistory = cur.messages
+                .filter(m => groups.some(g => g.id === m.chatId))
+                .slice(-10);
+            const combinedHistory: Message[] = [
+                ...dmHistory,
+                ...groupHistory,
+                { id: 'temp', chatId, senderType: 'player' as const, senderId: 'player', content, createdAt: new Date() }
+            ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+            const tStart = Date.now();
+
+            // F1：立刻打 API，完成後等 remaining 才顯示
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'respond',
+                    characterId: chatId,
+                    playerMessage: content,
+                    chatHistory: combinedHistory,
+                    currentPad: charState?.pad || { p: 0, a: 0.5, d: 0 },
+                    memory: charState?.memory || '',
+                    phaseGoal: mission?.goal || '',
+                    triggerDirection: mission?.triggerDirection || '',
+                    location: 'dm'
+                })
+            }).then(r => r.json()).then(data => {
+                const burst: Array<{ content: string }> = data?.messages;
+                if (!burst?.length) return;
+
+                const elapsed = Date.now() - tStart;
+                const remaining = Math.max(0, tDelay - elapsed);
+                const BUBBLE_GAP = 800; // ms between each bubble in a burst
+
+                // First bubble: show at `remaining`, mark 已讀, apply PAD delta
+                setTimeout(() => {
+                    setSession(prev => {
+                        if (!prev) return null;
+
+                        // 標記最後一則玩家訊息為「已讀」
+                        let msgs = prev.messages;
+                        const lastPlayerIdx = msgs.reduce(
+                            (idx, m, i) => (m.chatId === chatId && m.senderType === 'player' ? i : idx),
+                            -1
+                        );
+                        if (lastPlayerIdx >= 0) {
+                            msgs = msgs.map((m, i) => i === lastPlayerIdx
+                                ? { ...m, readBy: [...(m.readBy || []).filter(id => id !== chatId), chatId] }
+                                : m
+                            );
+                        }
+
+                        const firstBubble: Message = {
+                            id: generateId(),
+                            chatId,
+                            senderType: 'character',
+                            senderId: chatId,
+                            content: burst[0].content,
+                            expressionKey: data.expressionKey,
+                            createdAt: new Date()
+                        };
+
+                        // 同步更新 PAD（只在第一則套用，避免重複計算）
+                        if (data.padDelta) {
+                            const old = prev.characterStates[chatId];
+                            const d = data.padDelta;
+                            return {
+                                ...prev,
+                                messages: [...msgs, firstBubble],
+                                characterStates: {
+                                    ...prev.characterStates,
+                                    [chatId]: {
+                                        ...old,
+                                        pad: {
+                                            p: Math.max(-1, Math.min(1, old.pad.p + d.p)),
+                                            a: Math.max(0, Math.min(1, old.pad.a + d.a)),
+                                            d: Math.max(-1, Math.min(1, old.pad.d + d.d))
+                                        }
+                                    }
+                                }
+                            };
+                        }
+                        return { ...prev, messages: [...msgs, firstBubble] };
+                    });
+                }, remaining);
+
+                // Remaining bubbles: stagger at BUBBLE_GAP intervals
+                burst.slice(1).forEach((bubble, i) => {
+                    setTimeout(() => {
+                        setSession(prev => prev ? {
+                            ...prev,
+                            messages: [...prev.messages, {
+                                id: generateId(),
+                                chatId,
+                                senderType: 'character',
+                                senderId: chatId,
+                                content: bubble.content,
+                                expressionKey: data.expressionKey,
+                                createdAt: new Date()
+                            } as Message]
+                        } : null);
+                    }, remaining + (i + 1) * BUBBLE_GAP);
+                });
+
+                // 所有泡泡顯示完後才開始 nudge 計時
+                const totalDelay = remaining + (burst.length - 1) * BUBBLE_GAP;
+                setTimeout(() => vtScheduleNudge(chatId, chatId, 45), totalDelay);
+            }).catch(e => console.error('[F1] DM response error', e));
 
             // F3 + F5 平行背景執行
-            if (charState && cur) {
-                const chatHistory = cur.messages.filter(m => m.chatId === chatId).slice(-15);
-                const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
-                const mission = currentPhase?.characterMissions.find(m => m.characterId === chatId);
-
+            if (charState) {
                 Promise.all([
                     // F3：分析 PAD delta
                     fetch('/api/chat', {
@@ -346,7 +354,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                             action: 'analyze',
                             characterId: chatId,
                             playerMessage: content,
-                            chatHistory,
+                            chatHistory: dmHistory,
                             currentPad: charState.pad
                         })
                     }).then(r => r.json()).catch(() => null),
@@ -359,12 +367,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                                 action: 'checkGoal',
                                 goal: mission.goal,
                                 completionHint: mission.completionHint,
-                                chatHistory: [...chatHistory, {
-                                    id: 'temp', chatId,
-                                    senderType: 'player', senderId: 'player',
-                                    content, createdAt: new Date()
-                                }],
-                                currentlyAchieved: charState.goalAchieved
+                                chatHistory: combinedHistory,
+                                currentlyAchieved: false
                             })
                         }).then(r => r.json()).catch(() => null)
                         : Promise.resolve(null)
@@ -421,23 +425,66 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        // 群組：對所有成員根據 Arousal 機率排程回應（hook 內部做 shouldRespond）
+        // ── 群組 ────────────────────────────────────────────────────────────
         const group = groups.find(g => g.id === chatId);
         if (group) {
-            const members = group.members.map(id => characters[id]).filter(Boolean);
-            const memberStates = group.members.reduce((acc, id) => {
-                if (cur?.characterStates[id]) {
-                    acc[id] = { pad: cur.characterStates[id].pad };
-                }
-                return acc;
-            }, {} as Record<string, { pad: { a: number } }>);
-            const baseDelays = group.members.reduce((acc, id) => {
-                acc[id] = 2 + Math.random() * 3; // 每人 2–5 秒基礎延遲
-                return acc;
-            }, {} as Record<string, number>);
-            vtScheduleGroup(members, chatId, memberStates, baseDelays);
+            const groupHistory = cur.messages.filter(m => m.chatId === chatId).slice(-15);
+
+            group.members.forEach(memberId => {
+                const memberChar = characters[memberId];
+                const memberState = cur.characterStates[memberId];
+                if (!memberChar || !memberState) return;
+                if (!shouldRespond(memberChar, memberState.pad.a)) return;
+
+                const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
+                const mission = currentPhase?.characterMissions.find(m => m.characterId === memberId);
+                const tDelay = (mission?.responseDelaySeconds ?? 5) * 1000;
+
+                // 綜合群組歷史 + 該角色的 DM 歷史
+                const memberDmHistory = cur.messages.filter(m => m.chatId === memberId).slice(-10);
+                const combinedHistory: Message[] = [
+                    ...groupHistory,
+                    ...memberDmHistory,
+                    { id: 'temp', chatId, senderType: 'player' as const, senderId: 'player', content, createdAt: new Date() }
+                ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+                const tStart = Date.now();
+
+                fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'groupRespond',
+                        characterId: memberId,
+                        groupHistory: combinedHistory,
+                        currentPad: memberState.pad,
+                        memory: memberState.memory || '',
+                        phaseGoal: mission?.goal || '',
+                        urgency: 'medium'
+                    })
+                }).then(r => r.json()).then(data => {
+                    if (!data?.content) return;
+                    const elapsed = Date.now() - tStart;
+                    const remaining = Math.max(0, tDelay - elapsed);
+
+                    setTimeout(() => {
+                        setSession(prev => prev ? {
+                            ...prev,
+                            messages: [...prev.messages, {
+                                id: generateId(),
+                                chatId,
+                                senderType: 'character',
+                                senderId: memberId,
+                                content: data.content,
+                                expressionKey: data.expressionKey,
+                                createdAt: new Date()
+                            }]
+                        } : null);
+                    }, remaining);
+                }).catch(e => console.error(`[F2] Group response error for ${memberId}`, e));
+            });
         }
-    }, [vtScheduleDM, vtScheduleGroup, vtCancelNudge]);
+    }, [vtCancelNudge, vtScheduleNudge]);
 
     // ── Phase Management ───────────────────────────────────────────────────
 
@@ -448,7 +495,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
         if (!currentPhase) return;
 
-        // 依 branch conditions 決定下一個 phase
         const nextPhaseId = determineNextPhase(currentPhase, storyPlot.phases, cur.characterStates);
         if (!nextPhaseId) {
             console.log('[Phase] 無法推進：故事結束或條件未達成');
@@ -458,7 +504,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const nextPhase = storyPlot.phases.find(p => p.id === nextPhaseId);
         if (!nextPhase) return;
 
-        // 1. 更新 session 的 phase 資訊；ending phase 時標記故事結束
         const isEnding = nextPhase.id.startsWith('ending');
         setSession(prev => prev ? {
             ...prev,
@@ -468,7 +513,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             status: isEnding ? 'completed' : prev.status
         } : null);
 
-        // 2. 呼叫 phase-start API 觸發角色主動開場訊息
         try {
             const res = await fetch('/api/event/phase-start', {
                 method: 'POST',
@@ -484,7 +528,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
             if (Array.isArray(data.messages)) {
                 data.messages.forEach((msg: any, index: number) => {
-                    // 每則訊息間隔 1.5 秒，加上隨機抖動，模擬自然感
                     const delay = 1000 + index * 1500 + Math.random() * 1000;
                     setTimeout(() => {
                         setSession(prev => prev ? {
@@ -520,10 +563,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return characters[characterId]?.profile.name ?? null;
     }, []);
 
-    const getTypingCharacters = useCallback((chatId: string): string[] => {
-        return typingStates.filter(t => t.chatId === chatId).map(t => t.characterId);
-    }, [typingStates]);
-
     // ── Derived State ──────────────────────────────────────────────────────
 
     const chatRooms = useMemo(() => getChatRooms(session), [session]);
@@ -543,11 +582,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             canFastForward: currentPhase
                 ? areAllGoalsAchieved(currentPhase, session.characterStates)
                 : false,
-            typingStates,
             pendingEvents: [],
             debugMode
         };
-    }, [session, chatRooms, activeChatId, isLoading, typingStates, debugMode]);
+    }, [session, chatRooms, activeChatId, isLoading, debugMode]);
 
     // ── Context Value ──────────────────────────────────────────────────────
 
@@ -559,7 +597,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             isLoading,
             activeChatId,
             chatRooms,
-            typingStates,
             debugMode,
             sendMessage,
             createSession,
@@ -567,13 +604,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             deleteSession,
             setActiveChat: setActiveChatId,
             debugFastForward,
-            scheduleDMResponse,
-            scheduleGroupResponse,
             getCurrentPhase,
             advancePhase,
             toggleDebugMode,
             getCharacterName,
-            getTypingCharacters
         }}>
             {children}
         </GameContext.Provider>

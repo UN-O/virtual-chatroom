@@ -9,35 +9,8 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Send, Users, User, MoreVertical } from "lucide-react";
 import { characters } from "@/lib/story-data";
-
-// Typing indicator component
-function TypingIndicator({ characterName, avatarUrl }: { characterName: string; avatarUrl?: string }) {
-  return (
-    <div className="flex items-end gap-2">
-      <div className="w-8 shrink-0">
-        <Avatar className="h-8 w-8">
-          <AvatarImage src={avatarUrl} alt={characterName} />
-          <AvatarFallback className="bg-muted text-muted-foreground text-xs">
-            {characterName[0]}
-          </AvatarFallback>
-        </Avatar>
-      </div>
-      <div className="flex flex-col gap-1 items-start">
-        <span className="px-1 text-xs text-muted-foreground">{characterName}</span>
-        <div className="rounded-2xl rounded-bl-md bg-[var(--chat-bubble-other)] px-4 py-3 shadow-sm">
-          <div className="flex gap-1">
-            <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "0ms" }} />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "150ms" }} />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "300ms" }} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function ChatWindow() {
-  const { gameState, sendMessage, setActiveChat, getCharacterName, getTypingCharacters } = useGame();
+  const { gameState, sendMessage, setActiveChat, getCharacterName } = useGame();
   const [inputValue, setInputValue] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -49,10 +22,11 @@ export function ChatWindow() {
     (msg) => msg.chatId === gameState.activeChatId
   ) || [];
 
-  // Get typing characters for current chat
-  const typingCharacterIds = gameState?.activeChatId 
-    ? getTypingCharacters(gameState.activeChatId) 
-    : [];
+  // Index of the last player message that has been read by at least one character
+  const lastReadIdx = messages.reduce(
+    (idx, m, i) => (m.senderType === 'player' && m.readBy && m.readBy.length > 0 ? i : idx),
+    -1
+  );
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -148,11 +122,15 @@ export function ChatWindow() {
           {messages.map((message, index) => {
             const isPlayer = message.senderType === 'player';
             const showAvatar = !isPlayer && (
-              index === 0 || 
+              index === 0 ||
               messages[index - 1]?.senderId !== message.senderId
             );
             const senderName = message.senderId ? getCharacterName(message.senderId) : null;
             const showName = !isPlayer && activeChatRoom.type === 'group' && showAvatar;
+
+            // 已讀：只在最後一則有 readBy 的玩家訊息上顯示
+            const showRead = isPlayer && index === lastReadIdx;
+            const readCount = showRead ? (message.readBy?.length ?? 0) : 0;
 
             return (
               <div
@@ -167,9 +145,9 @@ export function ChatWindow() {
                   <div className="w-8 shrink-0">
                     {showAvatar && (
                       <Avatar className="h-8 w-8">
-                        <AvatarImage 
-                          src={getAvatarForSender(message.senderId) || undefined} 
-                          alt={senderName || "Character"} 
+                        <AvatarImage
+                          src={getAvatarForSender(message.senderId) || undefined}
+                          alt={senderName || "Character"}
                         />
                         <AvatarFallback className="bg-muted text-muted-foreground text-xs">
                           {getSenderInitial(message.senderId)}
@@ -201,24 +179,20 @@ export function ChatWindow() {
                   >
                     {message.content}
                   </div>
-                  <span className="px-1 text-[10px] text-muted-foreground">
-                    {formatMessageTime(message.createdAt)}
-                  </span>
+                  <div className="flex items-center gap-1 px-1">
+                    {showRead && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {activeChatRoom.type === 'group' && readCount > 1
+                          ? `已讀 ${readCount}`
+                          : '已讀'}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatMessageTime(message.createdAt)}
+                    </span>
+                  </div>
                 </div>
               </div>
-            );
-          })}
-          
-          {/* Typing indicators */}
-          {typingCharacterIds.map(charId => {
-            const char = characters[charId];
-            if (!char) return null;
-            return (
-              <TypingIndicator 
-                key={`typing_${charId}`}
-                characterName={char.profile.name}
-                avatarUrl={char.profile.avatarUrl}
-              />
             );
           })}
           

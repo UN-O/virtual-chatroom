@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     });
 
     return Response.json({
-      content: result.content,
+      content: result.messages[0]?.content || '',
       expressionKey: result.expressionKey || 'neutral'
     });
   } catch (error) {

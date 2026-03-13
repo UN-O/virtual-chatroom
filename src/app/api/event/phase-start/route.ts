@@ -72,12 +72,16 @@ export async function POST(req: Request) {
         }
       });
 
-      messages.push({
-        characterId: mission.characterId,
-        chatId: targetChatId,
-        content: result.content,
-        expressionKey: result.expressionKey || 'neutral'
-      });
+      // Expand burst into individual message entries so the caller
+      // can display each bubble with its own stagger delay.
+      for (const bubble of result.messages) {
+        messages.push({
+          characterId: mission.characterId,
+          chatId: targetChatId,
+          content: bubble.content,
+          expressionKey: result.expressionKey || 'neutral'
+        });
+      }
     } catch (error) {
       console.error(`[phase-start] Error generating message for ${mission.characterId}:`, error);
       messages.push({
