@@ -66,6 +66,38 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             // 預設選取第一個角色的 DM
             const firstCharId = Object.keys(characters)[0];
             if (firstCharId) setActiveChatId(firstCharId);
+
+            // 全新 session（無任何訊息）→ 觸發 phase-start，讓角色主動開場
+            if (s.messages.length === 0) {
+                fetch('/api/event/phase-start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phaseId: s.currentPhaseId,
+                        characterStates: s.characterStates,
+                        chatHistories: {}
+                    })
+                }).then(res => res.json()).then(data => {
+                    if (Array.isArray(data.messages)) {
+                        data.messages.forEach((msg: { characterId: string; chatId: string; content: string; expressionKey?: string }, index: number) => {
+                            setTimeout(() => {
+                                setSession(prev => prev ? {
+                                    ...prev,
+                                    messages: [...prev.messages, {
+                                        id: `init_${Date.now()}_${index}`,
+                                        chatId: msg.chatId,
+                                        senderType: 'character',
+                                        senderId: msg.characterId,
+                                        content: msg.content,
+                                        expressionKey: msg.expressionKey,
+                                        createdAt: new Date()
+                                    }]
+                                } : null);
+                            }, 1500 + index * 2000);
+                        });
+                    }
+                }).catch(e => console.error('[Phase] Initial phase-start failed', e));
+            }
         } else {
             setSession(null);
         }
@@ -290,12 +322,102 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         const cur = sessionRef.current;
 
-        // DM：取消 nudge 計時，排程角色回應
+        // DM：取消 nudge 計時，排程角色回應 + 背景分析
         const char = characters[chatId];
         if (char) {
             vtCancelNudge(chatId);
-            const arousal = cur?.characterStates[chatId]?.pad.a ?? 0.3;
+            const charState = cur?.characterStates[chatId];
+            const arousal = charState?.pad.a ?? 0.3;
+            // F1：排程角色回覆（由 useVirtualTime → onCharacterResponse 觸發）
             vtScheduleDM(char, chatId, 1.5, arousal);
+
+            // F3 + F5 平行背景執行
+            if (charState && cur) {
+                const chatHistory = cur.messages.filter(m => m.chatId === chatId).slice(-15);
+                const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
+                const mission = currentPhase?.characterMissions.find(m => m.characterId === chatId);
+
+                Promise.all([
+                    // F3：分析 PAD delta
+                    fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'analyze',
+                            characterId: chatId,
+                            playerMessage: content,
+                            chatHistory,
+                            currentPad: charState.pad
+                        })
+                    }).then(r => r.json()).catch(() => null),
+                    // F5：檢查 goal（未達成且有 mission 才執行）
+                    mission && !charState.goalAchieved
+                        ? fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'checkGoal',
+                                goal: mission.goal,
+                                completionHint: mission.completionHint,
+                                chatHistory: [...chatHistory, {
+                                    id: 'temp', chatId,
+                                    senderType: 'player', senderId: 'player',
+                                    content, createdAt: new Date()
+                                }],
+                                currentlyAchieved: charState.goalAchieved
+                            })
+                        }).then(r => r.json()).catch(() => null)
+                        : Promise.resolve(null)
+                ]).then(([analyzeResult, goalResult]) => {
+                    setSession(prev => {
+                        if (!prev) return null;
+                        const old = prev.characterStates[chatId];
+                        if (!old) return prev;
+                        const d = analyzeResult?.padDelta || { p: 0, a: 0, d: 0 };
+                        return {
+                            ...prev,
+                            characterStates: {
+                                ...prev.characterStates,
+                                [chatId]: {
+                                    ...old,
+                                    pad: {
+                                        p: Math.max(-1, Math.min(1, old.pad.p + d.p)),
+                                        a: Math.max(0, Math.min(1, old.pad.a + d.a)),
+                                        d: Math.max(-1, Math.min(1, old.pad.d + d.d))
+                                    },
+                                    goalAchieved: goalResult?.achieved ?? old.goalAchieved
+                                }
+                            }
+                        };
+                    });
+                    // F4：更新記憶（F3 完成後背景執行）
+                    if (analyzeResult?.emotionTag) {
+                        fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'updateMemory',
+                                characterId: chatId,
+                                previousMemory: charState.memory,
+                                playerMessage: content,
+                                characterResponse: '',
+                                padDelta: analyzeResult.padDelta || { p: 0, a: 0, d: 0 },
+                                emotionTag: analyzeResult.emotionTag
+                            })
+                        }).then(r => r.json()).then(res => {
+                            if (res?.memory) {
+                                setSession(prev => prev ? {
+                                    ...prev,
+                                    characterStates: {
+                                        ...prev.characterStates,
+                                        [chatId]: { ...prev.characterStates[chatId], memory: res.memory }
+                                    }
+                                } : null);
+                            }
+                        }).catch(e => console.error('[F4] Memory update failed', e));
+                    }
+                }).catch(e => console.error('[F3/F5] Analysis failed', e));
+            }
             return;
         }
 
@@ -336,12 +458,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const nextPhase = storyPlot.phases.find(p => p.id === nextPhaseId);
         if (!nextPhase) return;
 
-        // 1. 更新 session 的 phase 資訊
+        // 1. 更新 session 的 phase 資訊；ending phase 時標記故事結束
+        const isEnding = nextPhase.id.startsWith('ending');
         setSession(prev => prev ? {
             ...prev,
             currentPhaseId: nextPhase.id,
             progressLabel: nextPhase.progressLabel,
-            virtualTime: nextPhase.virtualTime
+            virtualTime: nextPhase.virtualTime,
+            status: isEnding ? 'completed' : prev.status
         } : null);
 
         // 2. 呼叫 phase-start API 觸發角色主動開場訊息
