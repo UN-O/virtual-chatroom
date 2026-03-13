@@ -5,7 +5,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Users, User } from "lucide-react";
+import { Users } from "lucide-react";
+import { CharacterAvatar } from "@/components/chat/CharacterAvatar";
+import { characters } from "@/lib/story-data";
 
 export function ChatList() {
   const { gameState, setActiveChat } = useGame();
@@ -42,25 +44,39 @@ export function ChatList() {
               >
                 {/* Avatar */}
                 <div className="relative">
-                  <Avatar className="h-12 w-12">
-                    <AvatarImage src={room.avatarUrl} alt={room.name} />
-                    <AvatarFallback className={cn(
-                      "text-primary-foreground",
-                      room.type === 'group' ? "bg-primary" : "bg-muted-foreground"
-                    )}>
-                      {room.type === 'group' ? (
+                  {room.type === 'dm' && room.characterId ? (() => {
+                    const char = characters[room.characterId];
+                    const charState = gameState.session.characterStates[room.characterId];
+                    return (
+                      <CharacterAvatar
+                        avatarUrl={char?.profile.avatarUrl}
+                        name={char?.profile.name ?? room.name}
+                        pad={charState?.pad ?? char?.padConfig.initial}
+                        avatarExpressions={char?.profile.avatarExpressions}
+                        className="h-12 w-12"
+                        fallbackClassName="bg-muted-foreground text-primary-foreground"
+                      />
+                    );
+                  })() : (
+                    <Avatar className="h-12 w-12">
+                      <AvatarImage src={room.avatarUrl} alt={room.name} />
+                      <AvatarFallback className="bg-primary text-primary-foreground">
                         <Users className="h-5 w-5" />
-                      ) : (
-                        <User className="h-5 w-5" />
-                      )}
-                    </AvatarFallback>
-                  </Avatar>
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
                   {room.unreadCount > 0 && (
-                    <Badge 
+                    <Badge
                       className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs text-destructive-foreground"
                     >
                       {room.unreadCount}
                     </Badge>
+                  )}
+                  {room.isOnline !== undefined && room.unreadCount === 0 && (
+                    <span className={cn(
+                      "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-background",
+                      room.isOnline ? "bg-green-500" : "bg-gray-400"
+                    )} />
                   )}
                 </div>
 

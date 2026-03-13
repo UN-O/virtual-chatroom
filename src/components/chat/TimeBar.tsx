@@ -1,14 +1,36 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useGame } from "@/lib/game-context";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { FastForward, Clock, CheckCircle2, Bug } from "lucide-react";
+import { FastForward, Clock, CheckCircle2, Bug, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { storyPlot } from "@/lib/story-data";
 
 export function TimeBar() {
-  const { gameState, advancePhase, getCurrentPhase, toggleDebugMode } = useGame();
+  const { gameState, advancePhase, getCurrentPhase, toggleDebugMode, phaseStartedAt } = useGame();
+  const [phaseElapsed, setPhaseElapsed] = useState(0); // 0–1 fraction of maxRealMinutes
+
+  // Update phase timer every 100ms
+  useEffect(() => {
+    if (!gameState) return;
+    const update = () => {
+      const currentPhase = storyPlot.phases.find(
+        (p) => p.id === gameState.session.currentPhaseId
+      );
+      if (!currentPhase || !currentPhase.maxRealMinutes) {
+        setPhaseElapsed(0);
+        return;
+      }
+      const elapsed = Date.now() - phaseStartedAt;
+      const totalMs = currentPhase.maxRealMinutes * 60 * 1000;
+      setPhaseElapsed(Math.min(1, elapsed / totalMs));
+    };
+    update();
+    const id = setInterval(update, 100);
+    return () => clearInterval(id);
+  }, [gameState, phaseStartedAt]);
 
   if (!gameState) return null;
 
@@ -16,11 +38,26 @@ export function TimeBar() {
   const currentPhaseIndex = storyPlot.phases.findIndex(
     (p) => p.id === gameState.session.currentPhaseId
   );
-  const totalPhases = storyPlot.phases.length;
-  const progress = ((currentPhaseIndex + 1) / totalPhases) * 100;
 
+  // Non-ending phases for story progress bar denominator
+  const nonEndingPhases = storyPlot.phases.filter((p) => !p.id.startsWith("ending"));
+  const nonEndingIndex = nonEndingPhases.findIndex(
+    (p) => p.id === gameState.session.currentPhaseId
+  );
+  const storyProgress =
+    nonEndingIndex >= 0
+      ? ((nonEndingIndex + 1) / nonEndingPhases.length) * 100
+      : 100; // ending phase → full bar
+
+  const totalPhases = storyPlot.phases.length;
   const isEndingPhase = currentPhase?.id.startsWith("ending");
-  const isCompleted = gameState.session.status === 'completed';
+  const isCompleted = gameState.session.status === "completed";
+
+  // Remaining real minutes label for phase timer
+  const maxRealMinutes = currentPhase?.maxRealMinutes ?? 0;
+  const elapsedMs = Date.now() - phaseStartedAt;
+  const remainingMs = Math.max(0, maxRealMinutes * 60 * 1000 - elapsedMs);
+  const remainingMins = Math.ceil(remainingMs / 60000);
 
   return (
     <div className="border-b border-border bg-card px-4 py-3">
@@ -40,13 +77,46 @@ export function TimeBar() {
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="flex flex-1 flex-col gap-1">
+        {/* Dual Progress Bars */}
+        <div className="flex flex-1 flex-col gap-1.5">
+          {/* Track 1: Story progress */}
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>劇情進度</span>
-            <span>{currentPhaseIndex + 1} / {totalPhases}</span>
+            <span>{Math.min(currentPhaseIndex + 1, totalPhases)} / {totalPhases}</span>
           </div>
-          <Progress value={progress} className="h-2" />
+          <Progress value={storyProgress} className="h-2" />
+
+          {/* Track 2: Phase timer (hidden for ending phases) */}
+          {!isEndingPhase && !isCompleted && maxRealMinutes > 0 && (
+            <>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Timer className="h-3 w-3" />
+                  本階段時間
+                </span>
+                <span
+                  className={cn(
+                    remainingMins <= 1 && "text-destructive font-medium"
+                  )}
+                >
+                  剩 {remainingMins} 分鐘
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-100",
+                    phaseElapsed >= 0.8
+                      ? "bg-destructive"
+                      : phaseElapsed >= 0.5
+                      ? "bg-amber-400"
+                      : "bg-amber-300"
+                  )}
+                  style={{ width: `${phaseElapsed * 100}%` }}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Fast Forward Button */}

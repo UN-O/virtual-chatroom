@@ -15,6 +15,8 @@ export interface GameContextType {
     activeChatId: string | null;       // 目前開啟的聊天室 ID
     chatRooms: ChatRoom[];             // DM + 群組的聊天室列表
     debugMode: boolean;
+    /** Date.now() value when the current phase started — used for phase timer bar */
+    phaseStartedAt: number;
 
     // ── 操作 ──────────────────────────────────────────────
     /** 玩家發送訊息。chatId 可以是角色 ID（DM）或群組 ID */

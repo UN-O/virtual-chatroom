@@ -43,6 +43,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [debugMode, setDebugMode] = useState(false);
     const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+    /** Reactive counterpart of phaseStartedAtRef — triggers re-render for TimeBar phase timer */
+    const [phaseStartedAt, setPhaseStartedAt] = useState<number>(() => Date.now());
 
     /**
      * sessionRef：在 async callback 內安全讀取最新 session。
@@ -63,6 +65,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     /** activeChatId ref，供 useEffect 內非同步存取 */
     const activeChatIdRef = useRef<string | null>(null);
     useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
+
+    /** 追蹤每個 chatId 的 nudge 次數，供 nudge 升壓邏輯使用 */
+    const nudgeCountRef = useRef<Record<string, number>>({});
 
     /** 追蹤上次 session.messages.length，用來偵測新訊息並更新 unreadCounts */
     const prevMsgCountRef = useRef<number>(0);
@@ -107,7 +112,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const loadSession = useCallback((sessionId: string) => {
         const s = LocalSessionAdapter.loadSession(sessionId);
         if (s) {
-            phaseStartedAtRef.current = Date.now();
+            const now = Date.now();
+            phaseStartedAtRef.current = now;
+            setPhaseStartedAt(now);
             setSession(s);
             LocalSessionAdapter.setLastActiveSessionId(sessionId);
             // 預設選取第一個角色的 DM
@@ -186,6 +193,44 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
     }, [session]);
 
+    // ── Phase Max Time Enforcement ─────────────────────────────────────────
+    //
+    // 當 phase 的 maxRealMinutes 到期時，自動呼叫 advancePhase()。
+
+    const phaseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        // 清除前一個計時器
+        if (phaseTimeoutRef.current !== null) {
+            clearTimeout(phaseTimeoutRef.current);
+            phaseTimeoutRef.current = null;
+        }
+
+        // 只在 active session 且非 ending phase 時啟動
+        if (!session || session.status !== 'active') return;
+        if (session.currentPhaseId.startsWith('ending')) return;
+
+        const currentPhase = storyPlot.phases.find(p => p.id === session.currentPhaseId);
+        if (!currentPhase || !currentPhase.maxRealMinutes) return;
+
+        const maxMs = currentPhase.maxRealMinutes * 60 * 1000;
+        const elapsed = Date.now() - phaseStartedAtRef.current;
+        const remaining = Math.max(0, maxMs - elapsed);
+
+        phaseTimeoutRef.current = setTimeout(() => {
+            phaseTimeoutRef.current = null;
+            advancePhase();
+        }, remaining);
+
+        return () => {
+            if (phaseTimeoutRef.current !== null) {
+                clearTimeout(phaseTimeoutRef.current);
+                phaseTimeoutRef.current = null;
+            }
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session?.currentPhaseId, session?.status]);
+
     // ── Nudge Engine ───────────────────────────────────────────────────────
     //
     // useVirtualTime 只負責 nudge 計時器。
@@ -201,6 +246,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             const cur = sessionRef.current;
             if (!cur) return;
 
+            // 遞增 nudge 次數（用於升壓邏輯）
+            nudgeCountRef.current[chatId] = (nudgeCountRef.current[chatId] ?? 0) + 1;
+            const currentNudgeCount = nudgeCountRef.current[chatId];
+
             const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
             try {
                 const res = await fetch('/api/event/nudge', {
@@ -213,7 +262,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                         characterState: cur.characterStates[characterId],
                         phaseGoal: currentPhase?.characterMissions
                             .find(m => m.characterId === characterId)?.goal || '',
-                        nudgeCount: 1
+                        nudgeCount: currentNudgeCount
                     })
                 });
                 const data = await res.json();
@@ -247,6 +296,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         vtCancelNudge,
         vtScheduleNudge,
         setSession,
+        resetNudgeCount: (chatId) => { nudgeCountRef.current[chatId] = 0; },
     });
 
     // ── Phase Management ───────────────────────────────────────────────────
@@ -255,6 +305,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         sessionRef,
         phaseStartedAtRef,
         setSession,
+        setPhaseStartedAt,
     });
 
     const debugFastForward = useCallback(() => { advancePhase(); }, [advancePhase]);
@@ -308,6 +359,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             activeChatId,
             chatRooms,
             debugMode,
+            phaseStartedAt,
             sendMessage,
             createSession,
             loadSession,

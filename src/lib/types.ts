@@ -206,6 +206,7 @@ export interface ChatRoom {
   lastMessage?: string;
   lastMessageTime?: Date;
   unreadCount: number;
+  isOnline?: boolean; // derived from character.onlineSchedule vs currentPhaseId
 }
 
 // Character State (runtime)
