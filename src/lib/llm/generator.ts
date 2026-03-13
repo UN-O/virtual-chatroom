@@ -186,6 +186,7 @@ ${state.memory || '還沒有特別的印象。'}
 場景：${locationLabel}
 本幕目標：${situation.phaseGoal}
 ${situation.triggerDirection ? `發訊方向：${situation.triggerDirection}` : ''}
+${!situation.isOnline ? `⚠️ 目前離線（休息中）：Andy 在你非上班/休息時傳訊給你，回應時語氣帶不悅或不情願，簡短冷淡即可。` : ''}
 
 # 對話紀錄
 ${formatChatHistory(situation.chatHistory, character)}

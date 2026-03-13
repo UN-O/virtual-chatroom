@@ -113,6 +113,14 @@ interface HandleDMOptions {
     resetNudgeCount: (chatId: string) => void;
 }
 
+/** 將 phase ID 對應到 OnlineSchedule 鍵名（與 helpers.ts 保持一致） */
+function getOnlineScheduleKey(phaseId: string): keyof import('../types').OnlineSchedule | null {
+    if (phaseId === 'morning') return 'morning';
+    if (phaseId === 'afternoon') return 'afternoon';
+    if (phaseId.startsWith('ending')) return 'evening';
+    return null;
+}
+
 function handleDM({
     chatId, content, cur,
     getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession, resetNudgeCount,
@@ -120,10 +128,37 @@ function handleDM({
     vtCancelNudge(chatId);
     resetNudgeCount(chatId);
 
+    const char = characters[chatId];
     const charState = cur.characterStates[chatId];
     const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
     const mission = currentPhase?.characterMissions.find(m => m.characterId === chatId);
     const tDelay = (mission?.responseDelaySeconds ?? 3) * 1000;
+
+    // 判斷角色是否在線（依當前 phase 對應的 onlineSchedule 時段）
+    const scheduleKey = getOnlineScheduleKey(cur.currentPhaseId);
+    const isOnline = char && scheduleKey != null ? char.onlineSchedule[scheduleKey] : true;
+
+    // 離線懲罰：玩家打擾離線角色，立即施加 PAD P -0.15 delta
+    if (!isOnline && charState) {
+        setSession(prev => {
+            if (!prev) return null;
+            const old = prev.characterStates[chatId];
+            if (!old) return prev;
+            return {
+                ...prev,
+                characterStates: {
+                    ...prev.characterStates,
+                    [chatId]: {
+                        ...old,
+                        pad: {
+                            ...old.pad,
+                            p: Math.max(-1, old.pad.p - 0.15)
+                        }
+                    }
+                }
+            };
+        });
+    }
 
     // 綜合 DM + 群組歷史作為角色的上下文
     const dmHistory = cur.messages.filter(m => m.chatId === chatId).slice(-10);
@@ -151,7 +186,8 @@ function handleDM({
             memory: charState?.memory || '',
             phaseGoal: mission?.goal || '',
             triggerDirection: mission?.triggerDirection || '',
-            location: 'dm'
+            location: 'dm',
+            isOnline
         })
     }).then(r => r.json()).then(data => {
         const burst: Array<{ content: string }> = data?.messages;
@@ -348,13 +384,11 @@ function handleGroup({
         const mission = currentPhase?.characterMissions.find(m => m.characterId === memberId);
         const tDelay = (mission?.responseDelaySeconds ?? 5) * 1000;
 
-        // 綜合群組歷史 + 該角色的 DM 歷史
-        const memberDmHistory = cur.messages.filter(m => m.chatId === memberId).slice(-10);
+        // 群組回應只使用群組歷史，避免 DM 頻道語境污染群組回覆
         const combinedHistory: Message[] = [
             ...groupHistory,
-            ...memberDmHistory,
             { id: 'temp', chatId, senderType: 'player' as const, senderId: 'player', content, createdAt: new Date() }
-        ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        ];
 
         const tStart = Date.now();
 

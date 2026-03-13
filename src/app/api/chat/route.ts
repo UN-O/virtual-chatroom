@@ -66,16 +66,18 @@ async function handleRespond(body: {
   phaseGoal?: string;
   triggerDirection?: string;
   location?: 'dm' | 'group';
+  isOnline?: boolean;
 }) {
-  const { 
-    characterId, 
-    playerMessage, 
-    chatHistory = [], 
+  const {
+    characterId,
+    playerMessage,
+    chatHistory = [],
     currentPad = { p: 0, a: 0.5, d: 0.5 },
     memory = '',
     phaseGoal = '',
     triggerDirection = '',
-    location = 'dm'
+    location = 'dm',
+    isOnline = true
   } = body;
 
   const character = characters[characterId];
@@ -104,7 +106,7 @@ async function handleRespond(body: {
         phaseGoal,
         triggerDirection,
         chatHistory: fullHistory,
-        isOnline: true,
+        isOnline,
         location
       }
     }),
