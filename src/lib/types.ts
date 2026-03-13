@@ -189,6 +189,7 @@ export interface Message {
   senderId: string | null;
   content: string;
   stickerId?: string;
+  expressionKey?: string;
   createdAt: Date;
 }
 

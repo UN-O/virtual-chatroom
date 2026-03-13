@@ -32,22 +32,57 @@ export async function POST(req: Request) {
     characterId: string;
     chatId: string;
     content: string;
-    expressionKey: string;
+    expressionKey?: string; // Optional property
   }> = [];
 
-  // Process each character's trigger for this phase
-  for (const trigger of phase.triggerOnStart) {
-    const character = characters[trigger.characterId];
+  // Process missions defined directly in the phase
+  // Fixed: Loop over characterMissions property instead of non-existent triggerOnStart
+  for (const mission of phase.characterMissions) {
+    const character = characters[mission.characterId];
     if (!character) continue;
 
-    const charState = characterStates[trigger.characterId] || {
-      pad: character.initialPad,
+    // Only generate message if there is a specific trigger direction for this phase
+    if (!mission.triggerDirection) continue;
+
+    const charState = characterStates[mission.characterId] || {
+      pad: character.padConfig.initial, // Access from padConfig
       memory: '',
       goalAchieved: false
     };
 
-    // Find the character's goal for this phase
-    const mission = storyPlot.characterMissions[trigger.characterId];
+    // Determine target chatId based on location
+    // Note: Assuming 'dm' maps to characterId and 'group' maps to a default group ID
+    // In a real implementation, you might passed specific chatIds or have a map
+    const targetChatId = mission.location === 'dm' 
+        ? mission.characterId 
+        : 'group_general'; // Default group ID
+
+    // Generate proactive message (F1)
+    const result = await llmGenerateCharacterMessage({
+        character,
+        state: {
+            pad: charState.pad,
+            memory: charState.memory
+        },
+        situation: {
+            phaseGoal: mission.goal,
+            triggerDirection: mission.triggerDirection,
+            chatHistory: chatHistories[targetChatId] || [],
+            isOnline: true,
+            location: mission.location === 'dm' ? 'dm' : 'group'
+        }
+    });
+
+    messages.push({
+        characterId: mission.characterId,
+        chatId: targetChatId,
+        content: result.content,
+        expressionKey: result.expressionKey
+    });
+  }
+
+  return Response.json({ messages });
+}
     const phaseGoal = mission?.phases[phaseId]?.goal || '';
 
     // Get chat history for this chat

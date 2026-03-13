@@ -6,25 +6,25 @@
   "phases": [
     {
       "phaseId": "morning",
-      "goal": "成功讓玩家接下報告任務，並得到一個明確的繳交時間",
-      "triggerDirection": "直接私訊玩家，說今天要開會，需要一份Q3業績摘要報告，要求今天下班前給他",
-      "completionHint": "玩家明確說出什麼時候可以交，或是說會做，且沒有把任務推給同事",
+      "goal": "成功讓Andy接下報告任務，並得到一個明確的繳交時間",
+      "triggerDirection": "直接私訊Andy，說今天要開會，需要一份Q3業績摘要報告，要求今天下班前給他",
+      "completionHint": "Andy明確說出什麼時候可以交，或是說會做，且沒有把任務推給同事",
       "location": "dm",
       "responseDelaySeconds": 2,
       "failNudge": "催促一次：「還沒確認？」"
     },
     {
       "phaseId": "afternoon",
-      "goal": "確認報告進度，若玩家有問題要讓他說出來",
+      "goal": "確認報告進度，若Andy有問題要讓他說出來",
       "triggerDirection": "在群組裡問一句進度，語氣平靜但帶壓力感",
-      "completionHint": "玩家在群組或私訊裡回報進度，不論是好消息或壞消息",
+      "completionHint": "Andy在群組或私訊裡回報進度，不論是好消息或壞消息",
       "location": "both",
       "responseDelaySeconds": 3,
-      "failNudge": "私訊玩家：「你那份呢」"
+      "failNudge": "私訊Andy：「你那份呢」"
     },
     {
       "phaseId": "ending_good",
-      "goal": "收到報告，給玩家一個簡短正面的回應",
+      "goal": "收到報告，給Andy一個簡短正面的回應",
       "triggerDirection": "說「好，我看一下」，停頓後說「還不錯」或「這樣可以」",
       "completionHint": "說出任何正面回應即達成",
       "location": "dm",
@@ -33,7 +33,7 @@
     },
     {
       "phaseId": "ending_bad",
-      "goal": "玩家沒交或交得很爛，表達不滿但保持專業",
+      "goal": "Andy沒交或交得很爛，表達不滿但保持專業",
       "triggerDirection": "冷靜說「這份我不能用」或「下次再這樣我就找別人做」，不爆發，但讓對方感受到壓力",
       "completionHint": "說完即達成",
       "location": "dm",

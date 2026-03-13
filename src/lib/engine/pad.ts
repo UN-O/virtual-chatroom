@@ -15,10 +15,9 @@ export interface PADDelta {
 }
 
 /**
- * Calculate whether a character should respond in a group chat
- * Pure frontend calculation, no LLM call needed
+ * Calculate response probability based on character config and current arousal
  */
-export function shouldRespond(character: Character, currentA: number): boolean {
+export function calculateResponseProbability(character: Character, currentA: number): number {
   const { arousalThreshold, responsivenessBase } = character.padConfig.sensitivity;
   
   // Apply fatigue penalty when arousal exceeds threshold
@@ -26,8 +25,15 @@ export function shouldRespond(character: Character, currentA: number): boolean {
     ? (currentA - arousalThreshold) * 2.0
     : 0;
   
-  const probability = Math.max(0, responsivenessBase - fatiguePenalty);
-  
+  return Math.max(0, responsivenessBase - fatiguePenalty);
+}
+
+/**
+ * Calculate whether a character should respond in a group chat
+ * Pure frontend calculation, no LLM call needed
+ */
+export function shouldRespond(character: Character, currentA: number): boolean {
+  const probability = calculateResponseProbability(character, currentA);
   return Math.random() < probability;
 }
 

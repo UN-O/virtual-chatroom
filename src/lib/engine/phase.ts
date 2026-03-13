@@ -74,7 +74,8 @@ function evaluateSingleCondition(
   
   // Handle PAD comparisons
   // Format: char_<id>.<pad_attr> <op> <value>
-  const padMatch = trimmed.match(/(\w+)\.([pad])\s*(>|<|>=|<=|==|!=)\s*([-\d.]+)/);
+  // Robust regex allowing optional spaces around dot and operator
+  const padMatch = trimmed.match(/(\w+)\s*\.\s*([pad])\s*(>|<|>=|<=|==|!=)\s*([-\d.]+)/);
   if (padMatch) {
     const [, characterId, attr, op, valueStr] = padMatch;
     const charState = characterStates[characterId];

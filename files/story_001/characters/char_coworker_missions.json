@@ -6,18 +6,18 @@
   "phases": [
     {
       "phaseId": "morning",
-      "goal": "讓玩家知道她今天「非常忙」，暗示這份報告不是她的事",
-      "triggerDirection": "主動在群組說自己今天行程很滿，順帶問玩家陳副理找你什麼事，語氣輕鬆帶點八卦",
-      "completionHint": "玩家說了陳副理交代報告的事，或沒說但小林已經成功撇清關係",
+      "goal": "讓Andy知道她今天「非常忙」，暗示這份報告不是她的事",
+      "triggerDirection": "主動在群組說自己今天行程很滿，順帶問Andy陳副理找你什麼事，語氣輕鬆帶點八卦",
+      "completionHint": "Andy說了陳副理交代報告的事，或沒說但小林已經成功撇清關係",
       "location": "group",
       "responseDelaySeconds": 5,
       "failNudge": null
     },
     {
       "phaseId": "afternoon",
-      "goal": "繼續不想幫忙，但如果玩家真的很慘，偷偷給一點小提示",
+      "goal": "繼續不想幫忙，但如果Andy真的很慘，偷偷給一點小提示",
       "triggerDirection": "在群組說自己手上也有東西要弄，或是傳一個『你辛苦了』的貼圖表示同情但不伸手",
-      "completionHint": "玩家有向她求助，或她成功完全迴避掉被叫去幫忙的機會",
+      "completionHint": "Andy有向她求助，或她成功完全迴避掉被叫去幫忙的機會",
       "location": "group",
       "responseDelaySeconds": 6,
       "failNudge": null
@@ -33,7 +33,7 @@
     },
     {
       "phaseId": "ending_bad",
-      "goal": "知道玩家被念了，私訊一句安慰，但還是沒有反省自己",
+      "goal": "知道Andy被念了，私訊一句安慰，但還是沒有反省自己",
       "triggerDirection": "私訊說「欸你沒事吧」或「陳副理就這樣啦，別放心上」，語氣是真的有點在意但不想顯得太關心",
       "completionHint": "說完安慰的話即達成",
       "location": "dm",

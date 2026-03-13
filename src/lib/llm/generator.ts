@@ -93,7 +93,7 @@ ${urgencyHint}`;
     // const recentHistory = situation.groupHistory.slice(-15);
     // const messages = recentHistory.map(msg => ({
     //   role: msg.senderType === 'player' ? 'user' as const : 'assistant' as const,
-    //   content: msg.senderId === character.id ? msg.content : `[${msg.senderId ? '其他人' : '玩家'}]: ${msg.content}`
+    //   content: msg.senderId === character.id ? msg.content : `[${msg.senderId ? '其他人' : 'Andy'}]: ${msg.content}`
     // }));
 
     try {
@@ -148,7 +148,7 @@ ${character.personality.description}
 ${describePADState(state.pad)}
 （根據 PAD 調整語氣：P 低時更冷漠、A 高時更簡短、D 高時更強勢）
 
-## 你目前對玩家的理解（你的主觀記憶）
+## 你目前對Andy的理解（你的主觀記憶）
 ${state.memory || '還沒有特別的印象'}
 
 ## 你在這個時間段的目的
@@ -165,8 +165,12 @@ ${situation.triggerDirection ? `方向提示：${situation.triggerDirection}` : 
 - 用繁體中文回覆
 
 ## 對話紀錄
-${formatChatHistory(situation.chatHistory, character, situation.location)}`;
+${formatChatHistory(situation.chatHistory, character, situation.location)}
+
+請作為${character.profile.name}接續著對話來回應，不用重複以前講過的
+`;
 }
+
 
 function getExpressionKey(pad: PAD): string {
     if (pad.p > 0.4) return 'happy';
@@ -213,7 +217,7 @@ function formatChatHistory(messages: Message[], character: Character, location: 
     if (recent.length === 0) return '(無紀錄)';
 
     return recent.map(msg => {
-        let roleLabel = '玩家';
+        let roleLabel = 'Andy';
         if (msg.senderType === 'character') {
             roleLabel = msg.senderId === character.id ? character.profile.name : '其他角色';
         }

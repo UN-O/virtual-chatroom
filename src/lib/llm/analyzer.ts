@@ -23,7 +23,7 @@ export async function llmAnalyzePlayerMessage(input: {
 }> {
   const { character, currentPad, playerMessage, chatHistory, traumaTriggers } = input;
 
-  const systemPrompt = `你是一個情感分析器，分析玩家訊息對角色 ${character.profile.name} 的影響。
+  const systemPrompt = `你是一個情感分析器，分析Andy訊息對角色 ${character.profile.name} 的影響。
 
 ## 角色資訊
 ${character.profile.description}
@@ -43,7 +43,7 @@ ${describePADState(currentPad)}
 - emotionTag 選擇：warm, cold, hurt, amused, annoyed, neutral, anxious, relieved`;
 
   const recentContext = chatHistory.slice(-5).map(m => 
-    `${m.senderType === 'player' ? '玩家' : character.profile.name}: ${m.content}`
+    `${m.senderType === 'player' ? 'Andy' : character.profile.name}: ${m.content}`
   ).join('\n');
 
   try {
@@ -53,7 +53,7 @@ ${describePADState(currentPad)}
       prompt: `最近對話：
 ${recentContext}
 
-玩家最新訊息：「${playerMessage}」
+Andy最新訊息：「${playerMessage}」
 
 分析此訊息對角色的情緒影響。`,
       output: Output.object({
@@ -103,18 +103,18 @@ export async function llmUpdateMemory(input: {
     const result = await generateText({
       model: getModel(),
       system: `你是 ${character.profile.name} 的內心記憶更新器。
-根據新發生的事件，更新角色對玩家的主觀記憶。
-記憶應該是角色的第一人稱視角，表達對玩家的理解和感受。
+根據新發生的事件，更新角色對Andy的主觀記憶。
+記憶應該是角色的第一人稱視角，表達對Andy的理解和感受。
 保持簡短（2-3 句話），用繁體中文。`,
       prompt: `上次記憶：${previousMemory || '(還沒有特別印象)'}
 
 這輪發生的事：
-- 玩家說：「${newEvents.playerMessage}」
+- Andy說：「${newEvents.playerMessage}」
 - 我回覆：「${newEvents.characterResponse}」
 - 情緒變化：${newEvents.emotionTag}
 - 情緒數值變化：P ${newEvents.padDelta.p > 0 ? '+' : ''}${newEvents.padDelta.p.toFixed(2)}
 
-請更新我對玩家的記憶摘要：`,
+請更新我對Andy的記憶摘要：`,
     });
 
     console.log(`[F4] Updated memory:`, result.text.trim());
@@ -144,7 +144,7 @@ export async function llmCheckGoalAchieved(input: {
   }
 
   const recentMessages = input.chatHistory.slice(-8).map(m =>
-    `${m.senderType === 'player' ? '玩家' : '角色'}: ${m.content}`
+    `${m.senderType === 'player' ? 'Andy' : '角色'}: ${m.content}`
   ).join('\n');
 
   try {
@@ -195,7 +195,7 @@ export async function llmDecideGroupRespond(input: {
   const { character, state, phaseGoal, groupHistory } = input;
 
   const recentMessages = groupHistory.slice(-10).map(m => {
-    const sender = m.senderType === 'player' ? '玩家' : 
+    const sender = m.senderType === 'player' ? 'Andy' : 
       (m.senderId === character.id ? '我' : '其他人');
     return `${sender}: ${m.content}`;
   }).join('\n');
@@ -311,7 +311,7 @@ function checkGoalFallback(input: {
     const hasTime = /\d|點|時|前/.test(recentPlayerMessages);
     return {
       achieved: agreed && hasTime,
-      reason: agreed && hasTime ? '玩家同意並給出時間' : '等待明確承諾',
+      reason: agreed && hasTime ? 'Andy同意並給出時間' : '等待明確承諾',
     };
   }
 
@@ -322,7 +322,7 @@ function checkGoalFallback(input: {
                      /\d+%/.test(recentPlayerMessages);
     return {
       achieved: reported,
-      reason: reported ? '玩家回報了進度' : '等待進度回報',
+      reason: reported ? 'Andy回報了進度' : '等待進度回報',
     };
   }
 

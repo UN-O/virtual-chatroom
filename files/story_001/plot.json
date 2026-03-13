@@ -15,18 +15,18 @@
       "characterMissions": [
         {
           "characterId": "char_boss",
-          "goal": "成功讓玩家接下報告任務，並得到明確繳交時間",
-          "completionHint": "玩家明確說出何時可以交，或說「好」且沒有把責任推走",
-          "triggerDirection": "直接私訊玩家，說要一份Q3業績摘要，今天下班前",
+          "goal": "成功讓Andy接下報告任務，並得到明確繳交時間",
+          "completionHint": "Andy明確說出何時可以交，或說「好」且沒有把責任推走",
+          "triggerDirection": "直接私訊Andy，說要一份Q3業績摘要，今天下班前",
           "location": "dm",
           "responseDelaySeconds": 2,
           "failNudge": "沒收到回覆就補一句：「還沒確認？」"
         },
         {
           "characterId": "char_coworker",
-          "goal": "讓玩家知道她今天非常忙，暗示報告不關她的事",
-          "completionHint": "小林成功說完她很忙的理由，或玩家已知道報告是自己的事",
-          "triggerDirection": "在群組說自己今天行程很滿，順帶八卦地問玩家陳副理找你什麼事",
+          "goal": "讓Andy知道她今天非常忙，暗示報告不關她的事",
+          "completionHint": "小林成功說完她很忙的理由，或Andy已知道報告是自己的事",
+          "triggerDirection": "在群組說自己今天行程很滿，順帶八卦地問Andy陳副理找你什麼事",
           "location": "group",
           "responseDelaySeconds": 5,
           "failNudge": null
@@ -51,8 +51,8 @@
       "characterMissions": [
         {
           "characterId": "char_boss",
-          "goal": "確認報告進度，讓玩家說出現況",
-          "completionHint": "玩家在群組或私訊回報進度，好壞都算",
+          "goal": "確認報告進度，讓Andy說出現況",
+          "completionHint": "Andy在群組或私訊回報進度，好壞都算",
           "triggerDirection": "在群組丟一句進度詢問，語氣平靜但帶壓力感",
           "location": "both",
           "responseDelaySeconds": 3,
@@ -60,8 +60,8 @@
         },
         {
           "characterId": "char_coworker",
-          "goal": "繼續迴避，但如果玩家很慘，偷偷給點小提示",
-          "completionHint": "小林成功迴避，或玩家明確向她求助（不論她有沒有幫）",
+          "goal": "繼續迴避，但如果Andy很慘，偷偷給點小提示",
+          "completionHint": "小林成功迴避，或Andy明確向她求助（不論她有沒有幫）",
           "triggerDirection": "在群組說自己手上也有東西，傳個同情貼圖但不出手幫",
           "location": "group",
           "responseDelaySeconds": 6,
@@ -92,7 +92,7 @@
       "characterMissions": [
         {
           "characterId": "char_boss",
-          "goal": "收到報告，給玩家簡短正面回應",
+          "goal": "收到報告，給Andy簡短正面回應",
           "completionHint": "說出任何正面評價即達成",
           "triggerDirection": "說「好，我看一下」，停頓後說「還不錯」或「這樣可以」",
           "location": "dm",
@@ -131,7 +131,7 @@
         },
         {
           "characterId": "char_coworker",
-          "goal": "知道玩家被念了，私訊一句安慰但不反省自己",
+          "goal": "知道Andy被念了，私訊一句安慰但不反省自己",
           "completionHint": "說出安慰的話即達成",
           "triggerDirection": "私訊說「欸你沒事吧」或「陳副理就這樣啦，別放心上」",
           "location": "dm",

@@ -16,18 +16,18 @@ export const storyPlot: StoryPlot = {
       characterMissions: [
         {
           characterId: "char_boss",
-          goal: "成功讓玩家接下報告任務，並得到明確繳交時間",
-          completionHint: "玩家明確說出何時可以交，或說「好」且沒有把責任推走",
-          triggerDirection: "直接私訊玩家，說要一份Q3業績摘要，今天下班前",
+          goal: "成功讓Andy接下報告任務，並得到明確繳交時間",
+          completionHint: "Andy明確說出何時可以交，或說「好」且沒有把責任推走",
+          triggerDirection: "直接私訊Andy，說要一份Q3業績摘要，今天下班前",
           location: "dm",
           responseDelaySeconds: 2,
           failNudge: "沒收到回覆就補一句：「還沒確認？」"
         },
         {
           characterId: "char_coworker",
-          goal: "讓玩家知道她今天非常忙，暗示報告不關她的事",
-          completionHint: "小林成功說完她很忙的理由，或玩家已知道報告是自己的事",
-          triggerDirection: "在群組說自己今天行程很滿，順帶八卦地問玩家陳副理找你什麼事",
+          goal: "讓Andy知道她今天非常忙，暗示報告不關她的事",
+          completionHint: "小林成功說完她很忙的理由，或Andy已知道報告是自己的事",
+          triggerDirection: "在群組說自己今天行程很滿，順帶八卦地問Andy陳副理找你什麼事",
           location: "group",
           responseDelaySeconds: 5,
           failNudge: null
@@ -49,8 +49,8 @@ export const storyPlot: StoryPlot = {
       characterMissions: [
         {
           characterId: "char_boss",
-          goal: "確認報告進度，讓玩家說出現況",
-          completionHint: "玩家在群組或私訊回報進度，好壞都算",
+          goal: "確認報告進度，讓Andy說出現況",
+          completionHint: "Andy在群組或私訊回報進度，好壞都算",
           triggerDirection: "在群組丟一句進度詢問，語氣平靜但帶壓力感",
           location: "both",
           responseDelaySeconds: 3,
@@ -58,8 +58,8 @@ export const storyPlot: StoryPlot = {
         },
         {
           characterId: "char_coworker",
-          goal: "繼續迴避，但如果玩家很慘，偷偷給點小提示",
-          completionHint: "小林成功迴避，或玩家明確向她求助（不論她有沒有幫）",
+          goal: "繼續迴避，但如果Andy很慘，偷偷給點小提示",
+          completionHint: "小林成功迴避，或Andy明確向她求助（不論她有沒有幫）",
           triggerDirection: "在群組說自己手上也有東西，傳個同情貼圖但不出手幫",
           location: "group",
           responseDelaySeconds: 6,
@@ -87,7 +87,7 @@ export const storyPlot: StoryPlot = {
       characterMissions: [
         {
           characterId: "char_boss",
-          goal: "收到報告，給玩家簡短正面回應",
+          goal: "收到報告，給Andy簡短正面回應",
           completionHint: "說出任何正面評價即達成",
           triggerDirection: "說「好，我看一下」，停頓後說「還不錯」或「這樣可以」",
           location: "dm",
@@ -123,7 +123,7 @@ export const storyPlot: StoryPlot = {
         },
         {
           characterId: "char_coworker",
-          goal: "知道玩家被念了，私訊一句安慰但不反省自己",
+          goal: "知道Andy被念了，私訊一句安慰但不反省自己",
           completionHint: "說出安慰的話即達成",
           triggerDirection: "私訊說「欸你沒事吧」或「陳副理就這樣啦，別放心上」",
           location: "dm",
@@ -180,13 +180,13 @@ export const charBoss: Character = {
       {
         id: "trauma_boss_001",
         description: "三年前一個下屬在關鍵時刻消失，導致他被上面罵，從此對「不確定」和「模糊承諾」極度敏感",
-        trigger: "玩家給出不明確的回答，例如「應該可以」、「試試看」、「盡量」",
+        trigger: "Andy給出不明確的回答，例如「應該可以」、「試試看」、「盡量」",
         reaction: "語氣立刻變冷，追問明確時間或結果，pad_p 下降明顯"
       }
     ],
     emotionalTriggers: {
-      positive: ["玩家主動回報進度", "玩家給出具體時間承諾", "玩家問到關鍵問題"],
-      negative: ["玩家說「等一下」、「再說」", "把問題推給別人（比如同事）", "完全沒有回應"]
+      positive: ["Andy主動回報進度", "Andy給出具體時間承諾", "Andy問到關鍵問題"],
+      negative: ["Andy說「等一下」、「再說」", "把問題推給別人（比如同事）", "完全沒有回應"]
     }
   },
   padConfig: {
@@ -268,13 +268,13 @@ export const charCoworker: Character = {
       {
         id: "trauma_cw_001",
         description: "之前認真做過一次，結果功勞被別人搶走，從此不想付出超過60%",
-        trigger: "玩家說「你多做一點不會怎樣」或暗示她應該更努力",
+        trigger: "Andy說「你多做一點不會怎樣」或暗示她應該更努力",
         reaction: "立刻縮回去，用更多理由堆砌防禦，pad_p 下降、pad_d 下降"
       }
     ],
     emotionalTriggers: {
-      positive: ["玩家理解她的處境", "玩家不直接要求她做事，而是問她感覺怎樣", "被當成知情者而不是責任人"],
-      negative: ["被直接指派任務", "玩家把她跟陳副理的要求掛在一起說", "被比較（你怎麼沒XXX做得快）"]
+      positive: ["Andy理解她的處境", "Andy不直接要求她做事，而是問她感覺怎樣", "被當成知情者而不是責任人"],
+      negative: ["被直接指派任務", "Andy把她跟陳副理的要求掛在一起說", "被比較（你怎麼沒XXX做得快）"]
     }
   },
   padConfig: {
@@ -321,25 +321,25 @@ export const bossMissions: CharacterMissions = {
   phases: [
     {
       phaseId: "morning",
-      goal: "成功讓玩家接下報告任務，並得到一個明確的繳交時間",
-      triggerDirection: "直接私訊玩家，說今天要開會，需要一份Q3業績摘要報告，要求今天下班前給他",
-      completionHint: "玩家明確說出什麼時候可以交，或是說會做，且沒有把任務推給同事",
+      goal: "成功讓Andy接下報告任務，並得到一個明確的繳交時間",
+      triggerDirection: "直接私訊Andy，說今天要開會，需要一份Q3業績摘要報告，要求今天下班前給他",
+      completionHint: "Andy明確說出什麼時候可以交，或是說會做，且沒有把任務推給同事",
       location: "dm",
       responseDelaySeconds: 2,
       failNudge: "催促一次：「還沒確認？」"
     },
     {
       phaseId: "afternoon",
-      goal: "確認報告進度，若玩家有問題要讓他說出來",
+      goal: "確認報告進度，若Andy有問題要讓他說出來",
       triggerDirection: "在群組裡問一句進度，語氣平靜但帶壓力感",
-      completionHint: "玩家在群組或私訊裡回報進度，不論是好消息或壞消息",
+      completionHint: "Andy在群組或私訊裡回報進度，不論是好消息或壞消息",
       location: "both",
       responseDelaySeconds: 3,
-      failNudge: "私訊玩家：「你那份呢」"
+      failNudge: "私訊Andy：「你那份呢」"
     },
     {
       phaseId: "ending_good",
-      goal: "收到報告，給玩家一個簡短正面的回應",
+      goal: "收到報告，給Andy一個簡短正面的回應",
       triggerDirection: "說「好，我看一下」，停頓後說「還不錯」或「這樣可以」",
       completionHint: "說出任何正面回應即達成",
       location: "dm",
@@ -348,7 +348,7 @@ export const bossMissions: CharacterMissions = {
     },
     {
       phaseId: "ending_bad",
-      goal: "玩家沒交或交得很爛，表達不滿但保持專業",
+      goal: "Andy沒交或交得很爛，表達不滿但保持專業",
       triggerDirection: "冷靜說「這份我不能用」或「下次再這樣我就找別人做」，不爆發，但讓對方感受到壓力",
       completionHint: "說完即達成",
       location: "dm",
@@ -378,18 +378,18 @@ export const coworkerMissions: CharacterMissions = {
   phases: [
     {
       phaseId: "morning",
-      goal: "讓玩家知道她今天「非常忙」，暗示這份報告不是她的事",
-      triggerDirection: "主動在群組說自己今天行程很滿，順帶問玩家陳副理找你什麼事，語氣輕鬆帶點八卦",
-      completionHint: "玩家說了陳副理交代報告的事，或沒說但小林已經成功撇清關係",
+      goal: "讓Andy知道她今天「非常忙」，暗示這份報告不是她的事",
+      triggerDirection: "主動在群組說自己今天行程很滿，順帶問Andy陳副理找你什麼事，語氣輕鬆帶點八卦",
+      completionHint: "Andy說了陳副理交代報告的事，或沒說但小林已經成功撇清關係",
       location: "group",
       responseDelaySeconds: 5,
       failNudge: null
     },
     {
       phaseId: "afternoon",
-      goal: "繼續不想幫忙，但如果玩家真的很慘，偷偷給一點小提示",
+      goal: "繼續不想幫忙，但如果Andy真的很慘，偷偷給一點小提示",
       triggerDirection: "在群組說自己手上也有東西要弄，或是傳一個『你辛苦了』的貼圖表示同情但不伸手",
-      completionHint: "玩家有向她求助，或她成功完全迴避掉被叫去幫忙的機會",
+      completionHint: "Andy有向她求助，或她成功完全迴避掉被叫去幫忙的機會",
       location: "group",
       responseDelaySeconds: 6,
       failNudge: null
@@ -405,7 +405,7 @@ export const coworkerMissions: CharacterMissions = {
     },
     {
       phaseId: "ending_bad",
-      goal: "知道玩家被念了，私訊一句安慰，但還是沒有反省自己",
+      goal: "知道Andy被念了，私訊一句安慰，但還是沒有反省自己",
       triggerDirection: "私訊說「欸你沒事吧」或「陳副理就這樣啦，別放心上」，語氣是真的有點在意但不想顯得太關心",
       completionHint: "說完安慰的話即達成",
       location: "dm",
