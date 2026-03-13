@@ -4,94 +4,112 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(0.97 0.005 240);
+  --background: oklch(0.96 0.008 250);
   --foreground: oklch(0.2 0.02 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.2 0.02 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.02 260);
-  --primary: oklch(0.55 0.18 145);
+  --primary: oklch(0.52 0.16 160);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.95 0.01 240);
   --secondary-foreground: oklch(0.3 0.02 260);
   --muted: oklch(0.93 0.01 240);
   --muted-foreground: oklch(0.5 0.02 260);
-  --accent: oklch(0.55 0.18 145);
+  --accent: oklch(0.52 0.16 160);
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.55 0.2 25);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.88 0.01 240);
   --input: oklch(0.95 0.01 240);
-  --ring: oklch(0.55 0.18 145);
-  --chart-1: oklch(0.55 0.18 145);
+  --ring: oklch(0.52 0.16 160);
+  --chart-1: oklch(0.52 0.16 160);
   --chart-2: oklch(0.6 0.15 200);
   --chart-3: oklch(0.5 0.15 280);
   --chart-4: oklch(0.7 0.15 60);
   --chart-5: oklch(0.6 0.18 30);
   --radius: 1rem;
-  --sidebar: oklch(1 0 0);
+  --sidebar: oklch(0.985 0.004 250);
   --sidebar-foreground: oklch(0.2 0.02 260);
-  --sidebar-primary: oklch(0.55 0.18 145);
+  --sidebar-primary: oklch(0.52 0.16 160);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.96 0.02 145);
-  --sidebar-accent-foreground: oklch(0.35 0.1 145);
+  --sidebar-accent: oklch(0.96 0.02 160);
+  --sidebar-accent-foreground: oklch(0.35 0.1 160);
   --sidebar-border: oklch(0.92 0.01 240);
-  --sidebar-ring: oklch(0.55 0.18 145);
-  
+  --sidebar-ring: oklch(0.52 0.16 160);
+
   /* Custom chat colors */
-  --chat-bubble-self: oklch(0.55 0.18 145);
+  --chat-bubble-self: var(--primary);
   --chat-bubble-self-foreground: oklch(1 0 0);
-  --chat-bubble-other: oklch(1 0 0);
+  --chat-bubble-other: oklch(0.97 0.003 250);
   --chat-bubble-other-foreground: oklch(0.2 0.02 260);
-  --chat-header: oklch(0.55 0.18 145);
+  --chat-header: oklch(0.52 0.16 160);
   --chat-header-foreground: oklch(1 0 0);
   --time-badge: oklch(0.65 0.12 50);
   --time-badge-foreground: oklch(1 0 0);
+
+  /* PAD emotional state glow colors */
+  --pad-happy-glow: oklch(0.75 0.15 100 / 0.4);
+  --pad-angry-glow: oklch(0.55 0.2 25 / 0.35);
+  --pad-sad-glow: oklch(0.5 0.08 240 / 0.3);
+  --pad-neutral-glow: oklch(0.6 0.02 250 / 0.15);
+
+  /* Phase transition overlay */
+  --phase-transition-bg: oklch(0.08 0.01 255 / 0.85);
 }
 
 .dark {
-  --background: oklch(0.15 0.01 260);
+  --background: oklch(0.12 0.012 255);
   --foreground: oklch(0.95 0 0);
-  --card: oklch(0.2 0.01 260);
+  --card: oklch(0.17 0.01 255);
   --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.2 0.01 260);
+  --popover: oklch(0.17 0.01 255);
   --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.6 0.18 145);
+  --primary: oklch(0.6 0.18 160);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.25 0.01 260);
   --secondary-foreground: oklch(0.9 0 0);
   --muted: oklch(0.25 0.01 260);
   --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.6 0.18 145);
+  --accent: oklch(0.6 0.18 160);
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.5 0.2 25);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.3 0.01 260);
   --input: oklch(0.25 0.01 260);
-  --ring: oklch(0.6 0.18 145);
-  --chart-1: oklch(0.6 0.18 145);
+  --ring: oklch(0.6 0.18 160);
+  --chart-1: oklch(0.6 0.18 160);
   --chart-2: oklch(0.65 0.15 200);
   --chart-3: oklch(0.55 0.15 280);
   --chart-4: oklch(0.75 0.15 60);
   --chart-5: oklch(0.65 0.18 30);
-  --sidebar: oklch(0.18 0.01 260);
+  --sidebar: oklch(0.17 0.01 255);
   --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.6 0.18 145);
+  --sidebar-primary: oklch(0.6 0.18 160);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.25 0.02 145);
-  --sidebar-accent-foreground: oklch(0.7 0.12 145);
+  --sidebar-accent: oklch(0.25 0.02 160);
+  --sidebar-accent-foreground: oklch(0.7 0.12 160);
   --sidebar-border: oklch(0.28 0.01 260);
-  --sidebar-ring: oklch(0.6 0.18 145);
-  
+  --sidebar-ring: oklch(0.6 0.18 160);
+
   /* Custom chat colors */
-  --chat-bubble-self: oklch(0.5 0.16 145);
+  --chat-bubble-self: oklch(0.5 0.16 160);
   --chat-bubble-self-foreground: oklch(1 0 0);
-  --chat-bubble-other: oklch(0.28 0.01 260);
+  --chat-bubble-other: oklch(0.22 0.015 255);
   --chat-bubble-other-foreground: oklch(0.95 0 0);
-  --chat-header: oklch(0.35 0.08 145);
+  --chat-header: oklch(0.20 0.012 255);
   --chat-header-foreground: oklch(1 0 0);
   --time-badge: oklch(0.55 0.1 50);
   --time-badge-foreground: oklch(1 0 0);
+
+  /* PAD emotional state glow colors */
+  --pad-happy-glow: oklch(0.75 0.15 100 / 0.4);
+  --pad-angry-glow: oklch(0.55 0.2 25 / 0.35);
+  --pad-sad-glow: oklch(0.5 0.08 240 / 0.3);
+  --pad-neutral-glow: oklch(0.6 0.02 250 / 0.15);
+
+  /* Phase transition overlay */
+  --phase-transition-bg: oklch(0.08 0.01 255 / 0.85);
 }
 
 @theme inline {
@@ -133,7 +151,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  
+
   /* Chat specific colors */
   --color-chat-bubble-self: var(--chat-bubble-self);
   --color-chat-bubble-self-foreground: var(--chat-bubble-self-foreground);
@@ -151,5 +169,22 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "kern" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+}
+
+/* ── Custom keyframe animations ── */
+
+/* Fast-forward button ready glow */
+@keyframes ff-ready {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent); }
+  50%       { box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 30%, transparent); }
+}
+
+/* Message bubble entrance */
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
