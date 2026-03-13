@@ -1,0 +1,57 @@
+{
+  "storyId": "story_001",
+  "characterId": "char_boss",
+  "playerInitialAttitude": "你是陳副理的直屬下屬，他今天有任務要交代給你，對你的信任度普通，看你這次怎麼處理",
+
+  "phases": [
+    {
+      "phaseId": "morning",
+      "goal": "成功讓玩家接下報告任務，並得到一個明確的繳交時間",
+      "triggerDirection": "直接私訊玩家，說今天要開會，需要一份Q3業績摘要報告，要求今天下班前給他",
+      "completionHint": "玩家明確說出什麼時候可以交，或是說會做，且沒有把任務推給同事",
+      "location": "dm",
+      "responseDelaySeconds": 2,
+      "failNudge": "催促一次：「還沒確認？」"
+    },
+    {
+      "phaseId": "afternoon",
+      "goal": "確認報告進度，若玩家有問題要讓他說出來",
+      "triggerDirection": "在群組裡問一句進度，語氣平靜但帶壓力感",
+      "completionHint": "玩家在群組或私訊裡回報進度，不論是好消息或壞消息",
+      "location": "both",
+      "responseDelaySeconds": 3,
+      "failNudge": "私訊玩家：「你那份呢」"
+    },
+    {
+      "phaseId": "ending_good",
+      "goal": "收到報告，給玩家一個簡短正面的回應",
+      "triggerDirection": "說「好，我看一下」，停頓後說「還不錯」或「這樣可以」",
+      "completionHint": "說出任何正面回應即達成",
+      "location": "dm",
+      "responseDelaySeconds": 4,
+      "failNudge": null
+    },
+    {
+      "phaseId": "ending_bad",
+      "goal": "玩家沒交或交得很爛，表達不滿但保持專業",
+      "triggerDirection": "冷靜說「這份我不能用」或「下次再這樣我就找別人做」，不爆發，但讓對方感受到壓力",
+      "completionHint": "說完即達成",
+      "location": "dm",
+      "responseDelaySeconds": 2,
+      "failNudge": null
+    }
+  ],
+
+  "branchConditions": [
+    {
+      "condition": "char_boss.p > 0.3 && goal_afternoon_achieved",
+      "nextPhaseId": "ending_good",
+      "description": "下午好感度高且進度有回報：走好結局"
+    },
+    {
+      "condition": "char_boss.p <= 0.3 || !goal_afternoon_achieved",
+      "nextPhaseId": "ending_bad",
+      "description": "好感度低或沒回報進度：走壞結局"
+    }
+  ]
+}

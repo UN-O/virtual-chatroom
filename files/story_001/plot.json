@@ -1,0 +1,146 @@
+{
+  "id": "story_001",
+  "slug": "story_001",
+  "title": "這份報告今天要",
+  "description": "陳副理要一份報告，今天下班前。同事小林說她很忙。你夾在中間。",
+  "estimatedMins": 20,
+
+  "phases": [
+    {
+      "id": "morning",
+      "virtualTime": "09:00",
+      "progressLabel": "早上・任務下來了",
+      "maxRealMinutes": 7,
+
+      "characterMissions": [
+        {
+          "characterId": "char_boss",
+          "goal": "成功讓玩家接下報告任務，並得到明確繳交時間",
+          "completionHint": "玩家明確說出何時可以交，或說「好」且沒有把責任推走",
+          "triggerDirection": "直接私訊玩家，說要一份Q3業績摘要，今天下班前",
+          "location": "dm",
+          "responseDelaySeconds": 2,
+          "failNudge": "沒收到回覆就補一句：「還沒確認？」"
+        },
+        {
+          "characterId": "char_coworker",
+          "goal": "讓玩家知道她今天非常忙，暗示報告不關她的事",
+          "completionHint": "小林成功說完她很忙的理由，或玩家已知道報告是自己的事",
+          "triggerDirection": "在群組說自己今天行程很滿，順帶八卦地問玩家陳副理找你什麼事",
+          "location": "group",
+          "responseDelaySeconds": 5,
+          "failNudge": null
+        }
+      ],
+
+      "branches": [
+        {
+          "condition": "goal_morning_char_boss_achieved",
+          "nextPhaseId": "afternoon",
+          "description": "主管任務達成，進入下午"
+        }
+      ]
+    },
+
+    {
+      "id": "afternoon",
+      "virtualTime": "14:00",
+      "progressLabel": "下午・進度被盯上了",
+      "maxRealMinutes": 8,
+
+      "characterMissions": [
+        {
+          "characterId": "char_boss",
+          "goal": "確認報告進度，讓玩家說出現況",
+          "completionHint": "玩家在群組或私訊回報進度，好壞都算",
+          "triggerDirection": "在群組丟一句進度詢問，語氣平靜但帶壓力感",
+          "location": "both",
+          "responseDelaySeconds": 3,
+          "failNudge": "私訊補一句：「你那份呢」"
+        },
+        {
+          "characterId": "char_coworker",
+          "goal": "繼續迴避，但如果玩家很慘，偷偷給點小提示",
+          "completionHint": "小林成功迴避，或玩家明確向她求助（不論她有沒有幫）",
+          "triggerDirection": "在群組說自己手上也有東西，傳個同情貼圖但不出手幫",
+          "location": "group",
+          "responseDelaySeconds": 6,
+          "failNudge": null
+        }
+      ],
+
+      "branches": [
+        {
+          "condition": "char_boss.p > 0.3 && goal_afternoon_char_boss_achieved",
+          "nextPhaseId": "ending_good",
+          "description": "主管好感度高且有回報進度：好結局"
+        },
+        {
+          "condition": "char_boss.p <= 0.3 || !goal_afternoon_char_boss_achieved",
+          "nextPhaseId": "ending_bad",
+          "description": "主管好感度低或沒回報：壞結局"
+        }
+      ]
+    },
+
+    {
+      "id": "ending_good",
+      "virtualTime": "17:30",
+      "progressLabel": "傍晚・總算過關",
+      "maxRealMinutes": 3,
+
+      "characterMissions": [
+        {
+          "characterId": "char_boss",
+          "goal": "收到報告，給玩家簡短正面回應",
+          "completionHint": "說出任何正面評價即達成",
+          "triggerDirection": "說「好，我看一下」，停頓後說「還不錯」或「這樣可以」",
+          "location": "dm",
+          "responseDelaySeconds": 4,
+          "failNudge": null
+        },
+        {
+          "characterId": "char_coworker",
+          "goal": "輕鬆說幾句收尾，可以暗示她知道報告不好做",
+          "completionHint": "說出輕鬆收尾的話即達成",
+          "triggerDirection": "傳貼圖或說「總算」、「你搞定了呀」",
+          "location": "group",
+          "responseDelaySeconds": 4,
+          "failNudge": null
+        }
+      ],
+
+      "branches": []
+    },
+
+    {
+      "id": "ending_bad",
+      "virtualTime": "17:30",
+      "progressLabel": "傍晚・今天很難熬",
+      "maxRealMinutes": 3,
+
+      "characterMissions": [
+        {
+          "characterId": "char_boss",
+          "goal": "對沒交或交爛的報告表達不滿，保持專業不爆發",
+          "completionHint": "說出任何表達不滿的話即達成",
+          "triggerDirection": "冷靜說「這份我不能用」或「下次再這樣我就找別人做」",
+          "location": "dm",
+          "responseDelaySeconds": 2,
+          "failNudge": null
+        },
+        {
+          "characterId": "char_coworker",
+          "goal": "知道玩家被念了，私訊一句安慰但不反省自己",
+          "completionHint": "說出安慰的話即達成",
+          "triggerDirection": "私訊說「欸你沒事吧」或「陳副理就這樣啦，別放心上」",
+          "location": "dm",
+          "responseDelaySeconds": 6,
+          "failNudge": null
+        }
+      ],
+
+      "branches": []
+    }
+  ]
+}

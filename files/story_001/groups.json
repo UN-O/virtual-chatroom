@@ -1,0 +1,13 @@
+{
+  "groups": [
+    {
+      "id": "group_office",
+      "slug": "office",
+      "name": "部門群組",
+      "description": "公司內部的工作群組，三個人都在裡面",
+      "avatarUrl": "/avatars/group-office.png",
+      "members": ["char_boss", "char_coworker"],
+      "playerAlwaysIn": true
+    }
+  ]
+}
