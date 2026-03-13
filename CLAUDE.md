@@ -108,6 +108,66 @@ OpenAI takes priority if both are set. Configure in a `.env.local` file inside `
 
 ---
 
+## AI SDK v6 重要注意事項
+
+> **必讀：** 以下規則適用於本專案所有 LLM 呼叫，違反會造成 runtime 錯誤或行為異常。
+
+### 1. 只使用 `generateText`，不使用 `generateObject`
+
+本專案所有 LLM 呼叫以 generateText 為主 *嚴禁使用 `generateObject`* 這已經被淘汰。
+
+### 2. 禁用 `maxOutputTokens`
+
+AI SDK v6 **不支援** `maxOutputTokens` 參數，傳入會導致 TypeScript 型別錯誤或被靜默忽略。如需控制輸出長度，請在 prompt 內以文字指示模型。
+
+```ts
+// ✅ 正確
+await generateText({ model, prompt: '請用 2–3 句話回答...' });
+
+// ❌ 錯誤 — v6 不接受此參數
+await generateText({ model, prompt, maxOutputTokens: 200 });
+```
+
+### 3. 大多數模型不支援 `temperature`
+
+目前主流模型（包含 Gemini 3.1 系列與 GPT-5 mini 系列）**不接受 `temperature` 參數**，傳入會被模型 provider 忽略或拋出錯誤。**不要在任何 `generateText` 呼叫中設定 `temperature`**。
+
+```ts
+// ✅ 正確
+await generateText({ model, prompt });
+
+// ❌ 錯誤 — 大多數 v6 模型不支援
+await generateText({ model, prompt, temperature: 0.7 });
+```
+
+### 4. 最新支援模型
+
+| Provider | 模型 ID |
+|---|---|
+| OpenAI | `gpt-5-mini`（及同系列變體） |
+| Google | `gemini-2.5-flash`、`gemini-3-flash-preview`、`gemini-3.1-pro-preview`（及同系列變體） |
+
+`src/lib/llm/config.ts` 中的模型選擇請以上述為準，避免使用已棄用的舊版模型名稱。
+
+### 5. 結構化輸出使用 `Output.object()`
+
+搭配 `generateText` 使用 `Output.object()` + Zod schema，**不要使用已棄用的 `generateObject`**。
+
+```ts
+import { generateText, Output } from 'ai';
+import { z } from 'zod';
+
+const { output } = await generateText({
+  model,
+  output: Output.object({
+    schema: z.object({ result: z.string() }),
+  }),
+  prompt,
+});
+```
+
+---
+
 ## Core Concepts
 
 ### PAD Emotion Model

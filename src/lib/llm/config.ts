@@ -21,7 +21,6 @@ export const LLM_CONFIG = {
   },
   
   // Generation settings
-  maxOutputTokens: 200,
   temperature: 0.8,
 } as const;
 

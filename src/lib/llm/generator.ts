@@ -1,4 +1,4 @@
-import { generateObject, generateText } from 'ai';
+import { Output, generateText } from 'ai';
 import { z } from 'zod';
 import type { Character, PAD, Message, CharacterMessageBurst, MessageBubble } from '@/lib/types';
 import { describePADState } from '@/lib/engine/pad';
@@ -43,12 +43,13 @@ export async function llmGenerateCharacterMessage(input: {
     const systemPrompt = buildScriptwriterPrompt(character, state, situation);
 
     try {
-        const { object } = await generateObject({
+        const { output } = await generateText({
             model: getModel(),
-            schema: messageBurstSchema,
+            output: Output.object({
+                schema: messageBurstSchema,
+            }),
             system: systemPrompt,
             prompt: '請設計接下來的訊息泡泡。',
-            maxOutputTokens: 400,
             providerOptions: {
                 google: {
                     thinkingConfig: { thinkingBudget: 0 },
@@ -56,10 +57,10 @@ export async function llmGenerateCharacterMessage(input: {
             },
         });
 
-        console.log(`[F1] ${character.profile.name} burst:`, object.messages);
+        console.log(`[F1] ${character.profile.name} burst:`, output.messages);
 
         return {
-            messages: object.messages,
+            messages: output.messages,
             expressionKey: getExpressionKey(state.pad),
         };
     } catch (error) {
@@ -114,7 +115,6 @@ ${urgencyHint}
             model: getModel(),
             system: systemPrompt,
             prompt: `請以 ${character.profile.name} 的身分，設計一則群組回應訊息泡泡。只輸出訊息內容本身，不要其他說明。`,
-            maxOutputTokens: 150,
         });
 
         console.log(`[F2] ${character.profile.name} group:`, result.text.trim());
