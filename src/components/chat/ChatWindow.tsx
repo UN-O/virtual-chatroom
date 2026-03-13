@@ -188,7 +188,7 @@ export function ChatWindow() {
                       </span>
                     )}
                     <span className="text-[10px] text-muted-foreground">
-                      {formatMessageTime(message.createdAt)}
+                      {message.virtualTimeLabel ?? formatMessageTime(message.createdAt)}
                     </span>
                   </div>
                 </div>

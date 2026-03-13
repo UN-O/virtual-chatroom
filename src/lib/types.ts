@@ -192,6 +192,7 @@ export interface Message {
   expressionKey?: string;
   readBy?: string[]; // character IDs that have read this message
   createdAt: Date;
+  virtualTimeLabel?: string; // Game virtual time label (e.g. "09:05"), set by GameProvider
 }
 
 // Chat Room (DM or Group)

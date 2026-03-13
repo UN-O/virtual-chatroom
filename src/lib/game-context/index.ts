@@ -18,4 +18,5 @@ export {
     generateId,
     initializeNewSession,
     getChatRooms,
+    computeVirtualTimeLabel,
 } from './helpers';

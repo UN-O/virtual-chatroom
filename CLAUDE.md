@@ -61,7 +61,14 @@ The first story (`story_001`, "這份報告今天要") is a ~20-minute scenario 
     └── lib/
         ├── types.ts                 ← All TypeScript interfaces (single source of truth)
         ├── story-data.ts            ← Hard-coded story/character data (in-memory)
-        ├── game-context.tsx         ← React context + GameProvider (central state)
+        ├── game-context/            ← React context + GameProvider (central state)
+        │   ├── README.md            ← Module documentation
+        │   ├── index.ts             ← Unified re-export (keep imports stable)
+        │   ├── context.ts           ← GameContextType + createContext + useGame
+        │   ├── helpers.ts           ← Pure helpers: generateId, initializeNewSession, getChatRooms, computeVirtualTimeLabel
+        │   ├── provider.tsx         ← GameProvider component (assembles sub-hooks)
+        │   ├── use-send-message.ts  ← useSendMessage: DM (F1/F3/F4/F5) + Group (F2/F3) logic
+        │   └── use-phase-manager.ts ← usePhaseManager: advancePhase + phase-start trigger
         ├── utils.ts                 ← cn() + misc helpers
         ├── engine/
         │   ├── pad.ts               ← PAD math: apply delta, decay, shouldRespond
@@ -325,7 +332,9 @@ PAD deltas are clamped inside `applyPADDelta()`: P/D in [-1, 1], A in [0, 1].
 |---|---|
 | `src/lib/types.ts` | All TypeScript types — check here before adding new fields |
 | `src/lib/story-data.ts` | All story content, characters, missions — the in-memory database |
-| `src/lib/game-context.tsx` | Central state machine — sendMessage, advancePhase, scheduling |
+| `src/lib/game-context/provider.tsx` | Central state machine — assembles useSendMessage + usePhaseManager |
+| `src/lib/game-context/use-send-message.ts` | DM (F1/F3/F4/F5) + Group (F2/F3) message sending logic |
+| `src/lib/game-context/use-phase-manager.ts` | Phase advancement + phase-start trigger |
 | `src/lib/engine/pad.ts` | PAD math — modify carefully, affects all character behavior |
 | `src/lib/engine/phase.ts` | Phase/branch logic — condition syntax documented here |
 | `src/lib/llm/config.ts` | LLM provider + model selection |
