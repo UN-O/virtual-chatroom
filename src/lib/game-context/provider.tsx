@@ -27,7 +27,7 @@ import React, {
 } from 'react';
 
 import { GameContext } from './context';
-import { generateId, initializeNewSession, getChatRooms } from './helpers';
+import { generateId, initializeNewSession, getChatRooms, computeVirtualTimeLabel } from './helpers';
 
 import { LocalSessionAdapter } from '../storage/local-adapter';
 import { storyPlot, characters, groups, allCharacterMissions } from '../story-data';
@@ -45,6 +45,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [debugMode, setDebugMode] = useState(false);
+    const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
     /**
      * sessionRef：在 async callback 內安全讀取最新 session。
@@ -52,6 +53,49 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
      */
     const sessionRef = useRef<ClientSession | null>(null);
     useEffect(() => { sessionRef.current = session; }, [session]);
+
+    /** 追蹤每個 phase 的真實開始時間（毫秒），用來計算虛擬時間標籤偏移量 */
+    const phaseStartedAtRef = useRef<number>(Date.now());
+
+    /** 回傳當前虛擬時間標籤（依 phaseStartedAt 和 session.virtualTime 計算） */
+    const getVirtualTimeLabel = useCallback((): string => {
+        const vt = sessionRef.current?.virtualTime ?? '09:00';
+        return computeVirtualTimeLabel(vt, Date.now() - phaseStartedAtRef.current);
+    }, []);
+
+    /** activeChatId ref，供 useEffect 內非同步存取 */
+    const activeChatIdRef = useRef<string | null>(null);
+    useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
+
+    /** 追蹤上次 session.messages.length，用來偵測新訊息 */
+    const prevMsgCountRef = useRef<number>(0);
+    useEffect(() => {
+        if (!session) return;
+        const msgs = session.messages;
+        if (msgs.length <= prevMsgCountRef.current) {
+            prevMsgCountRef.current = msgs.length;
+            return;
+        }
+        const newMsgs = msgs.slice(prevMsgCountRef.current);
+        prevMsgCountRef.current = msgs.length;
+
+        const increments: Record<string, number> = {};
+        newMsgs.forEach(m => {
+            if (m.senderType === 'character' && m.chatId !== activeChatIdRef.current) {
+                increments[m.chatId] = (increments[m.chatId] || 0) + 1;
+            }
+        });
+        if (Object.keys(increments).length > 0) {
+            setUnreadCounts(prev => {
+                const next = { ...prev };
+                Object.entries(increments).forEach(([chatId, count]) => {
+                    next[chatId] = (next[chatId] || 0) + count;
+                });
+                return next;
+            });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session?.messages.length]);
 
     // ── Session CRUD ───────────────────────────────────────────────────────
 
@@ -66,6 +110,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const loadSession = useCallback((sessionId: string) => {
         const s = LocalSessionAdapter.loadSession(sessionId);
         if (s) {
+            phaseStartedAtRef.current = Date.now();
             setSession(s);
             LocalSessionAdapter.setLastActiveSessionId(sessionId);
             // 預設選取第一個角色的 DM
@@ -74,6 +119,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
             // 全新 session（無任何訊息）→ 觸發 phase-start，讓角色主動開場
             if (s.messages.length === 0) {
+                const phaseStart = Date.now();
                 fetch('/api/event/phase-start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -85,7 +131,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 }).then(res => res.json()).then(data => {
                     if (Array.isArray(data.messages)) {
                         data.messages.forEach((msg: { characterId: string; chatId: string; content: string; expressionKey?: string }, index: number) => {
+                            const delay = 1500 + index * 2000;
                             setTimeout(() => {
+                                const vtLabel = computeVirtualTimeLabel(s.virtualTime, Date.now() - phaseStart);
                                 setSession(prev => prev ? {
                                     ...prev,
                                     messages: [...prev.messages, {
@@ -95,10 +143,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                                         senderId: msg.characterId,
                                         content: msg.content,
                                         expressionKey: msg.expressionKey,
+                                        virtualTimeLabel: vtLabel,
                                         createdAt: new Date()
                                     }]
                                 } : null);
-                            }, 1500 + index * 2000);
+                            }, delay);
                         });
                     }
                 }).catch(e => console.error('[Phase] Initial phase-start failed', e));
@@ -106,6 +155,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         } else {
             setSession(null);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const deleteSession = useCallback((sessionId: string) => {
@@ -166,6 +216,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 });
                 const data = await res.json();
                 if (data.content) {
+                    const vtLabel = getVirtualTimeLabel();
                     setSession(prev => prev ? {
                         ...prev,
                         messages: [...prev.messages, {
@@ -175,6 +226,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                             senderId: characterId,
                             content: data.content,
                             expressionKey: 'neutral',
+                            virtualTimeLabel: vtLabel,
                             createdAt: new Date()
                         }]
                     } : null);
@@ -202,6 +254,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (!chatId) return;
 
         // 立即（樂觀）寫入玩家訊息
+        const playerVtLabel = getVirtualTimeLabel();
         setSession(prev => {
             if (!prev) return null;
             return {
@@ -213,6 +266,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                     senderId: 'player',
                     content,
                     stickerId,
+                    virtualTimeLabel: playerVtLabel,
                     createdAt: new Date()
                 }],
                 lastActiveAt: new Date()
@@ -270,6 +324,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
                 // First bubble: show at `remaining`, mark 已讀, apply PAD delta
                 setTimeout(() => {
+                    const vtLabel = getVirtualTimeLabel();
                     setSession(prev => {
                         if (!prev) return null;
 
@@ -293,6 +348,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                             senderId: chatId,
                             content: burst[0].content,
                             expressionKey: data.expressionKey,
+                            virtualTimeLabel: vtLabel,
                             createdAt: new Date()
                         };
 
@@ -323,6 +379,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 // Remaining bubbles: stagger at BUBBLE_GAP intervals
                 burst.slice(1).forEach((bubble, i) => {
                     setTimeout(() => {
+                        const vtLabel = getVirtualTimeLabel();
                         setSession(prev => prev ? {
                             ...prev,
                             messages: [...prev.messages, {
@@ -332,6 +389,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                                 senderId: chatId,
                                 content: bubble.content,
                                 expressionKey: data.expressionKey,
+                                virtualTimeLabel: vtLabel,
                                 createdAt: new Date()
                             } as Message]
                         } : null);
@@ -450,24 +508,64 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
                 const tStart = Date.now();
 
-                fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'groupRespond',
-                        characterId: memberId,
-                        groupHistory: combinedHistory,
-                        currentPad: memberState.pad,
-                        memory: memberState.memory || '',
-                        phaseGoal: mission?.goal || '',
-                        urgency: 'medium'
-                    })
-                }).then(r => r.json()).then(data => {
-                    if (!data?.content) return;
+                // F2 (group respond) + F3 (analyze PAD) in parallel
+                Promise.all([
+                    fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'groupRespond',
+                            characterId: memberId,
+                            groupHistory: combinedHistory,
+                            currentPad: memberState.pad,
+                            memory: memberState.memory || '',
+                            phaseGoal: mission?.goal || '',
+                            urgency: 'medium'
+                        })
+                    }).then(r => r.json()).catch(() => null),
+                    // F3：分析群組訊息對該角色的情緒影響
+                    fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'analyze',
+                            characterId: memberId,
+                            playerMessage: content,
+                            chatHistory: groupHistory,
+                            currentPad: memberState.pad
+                        })
+                    }).then(r => r.json()).catch(() => null)
+                ]).then(([f2Data, analyzeResult]) => {
+                    // Apply F3 PAD delta (silent background update)
+                    if (analyzeResult?.padDelta) {
+                        setSession(prev => {
+                            if (!prev) return null;
+                            const old = prev.characterStates[memberId];
+                            if (!old) return prev;
+                            const d = analyzeResult.padDelta;
+                            return {
+                                ...prev,
+                                characterStates: {
+                                    ...prev.characterStates,
+                                    [memberId]: {
+                                        ...old,
+                                        pad: {
+                                            p: Math.max(-1, Math.min(1, old.pad.p + d.p)),
+                                            a: Math.max(0, Math.min(1, old.pad.a + d.a)),
+                                            d: Math.max(-1, Math.min(1, old.pad.d + d.d))
+                                        }
+                                    }
+                                }
+                            };
+                        });
+                    }
+
+                    if (!f2Data?.content) return;
                     const elapsed = Date.now() - tStart;
                     const remaining = Math.max(0, tDelay - elapsed);
 
                     setTimeout(() => {
+                        const vtLabel = getVirtualTimeLabel();
                         setSession(prev => prev ? {
                             ...prev,
                             messages: [...prev.messages, {
@@ -475,13 +573,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                                 chatId,
                                 senderType: 'character',
                                 senderId: memberId,
-                                content: data.content,
-                                expressionKey: data.expressionKey,
+                                content: f2Data.content,
+                                expressionKey: f2Data.expressionKey,
+                                virtualTimeLabel: vtLabel,
                                 createdAt: new Date()
                             }]
                         } : null);
                     }, remaining);
-                }).catch(e => console.error(`[F2] Group response error for ${memberId}`, e));
+                }).catch(e => console.error(`[F2/F3] Group response error for ${memberId}`, e));
             });
         }
     }, [vtCancelNudge, vtScheduleNudge]);
@@ -505,6 +604,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (!nextPhase) return;
 
         const isEnding = nextPhase.id.startsWith('ending');
+        // Reset phase timer before updating session so virtualTime is correct
+        phaseStartedAtRef.current = Date.now();
         setSession(prev => prev ? {
             ...prev,
             currentPhaseId: nextPhase.id,
@@ -514,6 +615,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         } : null);
 
         try {
+            const phaseStart = Date.now();
             const res = await fetch('/api/event/phase-start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -530,6 +632,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 data.messages.forEach((msg: any, index: number) => {
                     const delay = 1000 + index * 1500 + Math.random() * 1000;
                     setTimeout(() => {
+                        const vtLabel = computeVirtualTimeLabel(nextPhase.virtualTime, Date.now() - phaseStart);
                         setSession(prev => prev ? {
                             ...prev,
                             messages: [...prev.messages, {
@@ -539,6 +642,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                                 senderId: msg.characterId,
                                 content: msg.content,
                                 expressionKey: msg.expressionKey,
+                                virtualTimeLabel: vtLabel,
                                 createdAt: new Date()
                             }]
                         } : null);
@@ -565,7 +669,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     // ── Derived State ──────────────────────────────────────────────────────
 
-    const chatRooms = useMemo(() => getChatRooms(session), [session]);
+    const chatRooms = useMemo(() => {
+        const rooms = getChatRooms(session);
+        return rooms.map(r => ({ ...r, unreadCount: unreadCounts[r.id] ?? 0 }));
+    }, [session, unreadCounts]);
 
     const gameState = useMemo(() => {
         if (!session) return null;
@@ -602,7 +709,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             createSession,
             loadSession,
             deleteSession,
-            setActiveChat: setActiveChatId,
+            setActiveChat: (chatId: string | null) => {
+                setActiveChatId(chatId);
+                if (chatId) setUnreadCounts(prev => ({ ...prev, [chatId]: 0 }));
+            },
             debugFastForward,
             getCurrentPhase,
             advancePhase,

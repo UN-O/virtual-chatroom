@@ -15,6 +15,17 @@ export const generateId = (): string =>
     Math.random().toString(36).substring(2, 9);
 
 /**
+ * 根據 phase 的虛擬時間起點 + 真實偏移毫秒數，計算虛擬時間標籤。
+ * 例如：phaseVirtualTime="09:00", offsetMs=150000 → "09:02"
+ */
+export function computeVirtualTimeLabel(phaseVirtualTime: string, offsetMs: number): string {
+    const [h, m] = phaseVirtualTime.split(':').map(Number);
+    const total = h * 60 + m + Math.floor(offsetMs / 60000);
+    const clamped = Math.max(0, Math.min(23 * 60 + 59, total));
+    return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+}
+
+/**
  * 建立一個全新的 ClientSession。
  * 依照 storyPlot.phases[0] 初始化 phase，
  * 依照各角色的 padConfig.initial 初始化 PAD 狀態。
