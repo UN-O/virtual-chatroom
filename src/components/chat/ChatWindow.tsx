@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Send, Users, User, MoreVertical } from "lucide-react";
 import { characters } from "@/lib/story-data";
+import { CharacterAvatar } from "@/components/chat/CharacterAvatar";
 export function ChatWindow() {
   const { gameState, sendMessage, setActiveChat, getCharacterName } = useGame();
   const [inputValue, setInputValue] = useState("");
@@ -156,17 +157,24 @@ export function ChatWindow() {
                 {/* Avatar */}
                 {!isPlayer && (
                   <div className="w-8 shrink-0">
-                    {showAvatar && (
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage
-                          src={getAvatarForSender(message.senderId) || undefined}
-                          alt={senderName || "Character"}
+                    {showAvatar && (() => {
+                      const charId = message.senderId;
+                      const char = charId ? characters[charId] : undefined;
+                      const charState = charId
+                        ? gameState?.session.characterStates[charId]
+                        : undefined;
+                      return (
+                        <CharacterAvatar
+                          avatarUrl={char?.profile.avatarUrl}
+                          name={char?.profile.name ?? senderName ?? "?"}
+                          pad={charState?.pad ?? char?.padConfig.initial}
+                          expressionKey={message.expressionKey}
+                          avatarExpressions={char?.profile.avatarExpressions}
+                          className="h-8 w-8"
+                          fallbackClassName="bg-muted text-muted-foreground text-xs"
                         />
-                        <AvatarFallback className="bg-muted text-muted-foreground text-xs">
-                          {getSenderInitial(message.senderId)}
-                        </AvatarFallback>
-                      </Avatar>
-                    )}
+                      );
+                    })()}
                   </div>
                 )}
 

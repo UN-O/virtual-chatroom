@@ -28,6 +28,8 @@ export interface UsePhaseManagerOptions {
     phaseStartedAtRef: MutableRefObject<number>;
     /** React setState dispatcher */
     setSession: Dispatch<SetStateAction<ClientSession | null>>;
+    /** Reactive setState for phase start time — triggers re-render of TimeBar phase timer */
+    setPhaseStartedAt: Dispatch<SetStateAction<number>>;
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ export function usePhaseManager({
     sessionRef,
     phaseStartedAtRef,
     setSession,
+    setPhaseStartedAt,
 }: UsePhaseManagerOptions) {
     const advancePhase = useCallback(async () => {
         const cur = sessionRef.current;
@@ -54,8 +57,10 @@ export function usePhaseManager({
         if (!nextPhase) return;
 
         const isEnding = nextPhase.id.startsWith('ending');
-        // Reset phase timer before updating session so virtualTime is correct
-        phaseStartedAtRef.current = Date.now();
+        // Reset phase timer — update both the ref (for virtualTimeLabel) and reactive state (for TimeBar)
+        const now = Date.now();
+        phaseStartedAtRef.current = now;
+        setPhaseStartedAt(now);
         setSession(prev => prev ? {
             ...prev,
             currentPhaseId: nextPhase.id,
