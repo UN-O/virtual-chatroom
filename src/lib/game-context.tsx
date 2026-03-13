@@ -164,6 +164,39 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             LocalSessionAdapter.setLastActiveSessionId(sessionId);
             const firstCharId = Object.keys(characters)[0];
             if (firstCharId) setActiveChatId(firstCharId);
+
+            // Trigger phase-start messages if this is a fresh session (no messages yet)
+            if (s.messages.length === 0) {
+                fetch('/api/event/phase-start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phaseId: s.currentPhaseId,
+                        characterStates: s.characterStates,
+                        chatHistories: {}
+                    })
+                }).then(res => res.json()).then(data => {
+                    if (data.messages && Array.isArray(data.messages)) {
+                        data.messages.forEach((msg: { characterId: string; chatId: string; content: string; expressionKey?: string }, index: number) => {
+                            const delay = 1500 + index * 2000;
+                            setTimeout(() => {
+                                setSession(prev => prev ? {
+                                    ...prev,
+                                    messages: [...prev.messages, {
+                                        id: `phase_start_${Date.now()}_${index}`,
+                                        chatId: msg.chatId,
+                                        senderType: 'character',
+                                        senderId: msg.characterId,
+                                        content: msg.content,
+                                        expressionKey: msg.expressionKey,
+                                        createdAt: new Date()
+                                    }]
+                                } : null);
+                            }, delay);
+                        });
+                    }
+                }).catch(e => console.error('[Phase] Initial phase-start failed', e));
+            }
         } else {
             setSession(null); // Clear session if not found
         }
@@ -367,138 +400,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     // Remap old schedule functions to new hook
     const scheduleDMResponse = useCallback((characterId: string, delayMs: number) => {
-        vtScheduleDM(characterId, characterId, delayMs); // DM: chatId = characterId
+        const char = characters[characterId];
+        if (char) vtScheduleDM(char, characterId, delayMs / 1000, 0.5);
     }, [vtScheduleDM]);
 
     const scheduleGroupResponse = useCallback((groupId: string, characterId: string, delayMs: number) => {
-        // Direct schedule single char
-        // Note: vtScheduleGroup logic is batch, but we can access internal single schedule if needed
-        // Or just map to what we have. 
-        // Wait, hook doesn't expose `scheduleSingleGroupResponse`. 
-        // It exposes `scheduleGroupResponses` (plural).
-        // Let's implement single scheduling via direct logic or expand hook.
-        // For compatibility, we can just trigger the group logic which will check logic.
-        
-        // Actually best to fix `useVirtualTime` to expose single scheduler OR adapt here.
-        // We will adapt here by creating a dummy wrapper if needed, 
-        // BUT current code assumes delayMs is already calculated.
-        
-        // Let's just use vtScheduleDM for now (mechanism is same: timer -> callback)
-        // DANGER: We need to pass groupId as chatId
-        vtScheduleDM(characterId, groupId, delayMs);
+        // Map single-character group schedule to vtScheduleDM (same timer mechanism, different chatId)
+        vtScheduleDM(characters[characterId], groupId, delayMs / 1000, 0.5);
     }, [vtScheduleDM]);
-
-                    const oldCharState = prev.characterStates[characterId];
-                    const delta = data.padDelta || { p: 0, a: 0, d: 0 };
-                    return {
-                        ...prev,
-                        messages: [...prev.messages, {
-                            id: generateId(),
-                            chatId: characterId,
-                            senderType: 'character',
-                            senderId: characterId,
-                            content: data.content || '...',
-                            expressionKey: data.expressionKey,
-                            createdAt: new Date()
-                        }],
-                        characterStates: {
-                            ...prev.characterStates,
-                            [characterId]: {
-                                ...oldCharState,
-                                pad: {
-                                    p: Math.max(-1, Math.min(1, oldCharState.pad.p + delta.p)),
-                                    a: Math.max(0, Math.min(1, oldCharState.pad.a + delta.a)),
-                                    d: Math.max(-1, Math.min(1, oldCharState.pad.d + delta.d))
-                                }
-                            }
-                        }
-                    };
-                });
-            } catch (e) {
-                console.error('scheduleDMResponse error', e);
-                setSession(prev => prev ? {
-                    ...prev,
-                    messages: [...prev.messages, {
-                        id: generateId(),
-                        chatId: characterId,
-                        senderType: 'character',
-                        senderId: characterId,
-                        content: '...',
-                        createdAt: new Date()
-                    }]
-                } : null);
-            }
-        }, delayMs);
-    }, []);
-
-    const scheduleGroupResponse = useCallback((groupId: string, characterId: string, delayMs: number) => {
-        setTypingStates(prev => {
-            if (prev.some(t => t.chatId === groupId && t.characterId === characterId)) return prev;
-            return [...prev, { characterId, chatId: groupId, startedAt: new Date() }];
-        });
-
-        setTimeout(async () => {
-            setTypingStates(prev =>
-                prev.filter(t => !(t.chatId === groupId && t.characterId === characterId))
-            );
-
-            const currentSession = sessionRef.current;
-            if (!currentSession) return;
-
-            const charState = currentSession.characterStates[characterId];
-            const character = characters[characterId];
-
-            // Validate character and state exist
-            if (!charState || !character) return;
-
-            // Use PAD engine to determine response probability
-            // Pure frontend calculation per architecture docs
-            if (!shouldRespond(character, charState.pad.a)) {
-                return;
-            }
-
-            const arousalProbability = calculateResponseProbability(character, charState.pad.a);
-
-            const groupHistory = currentSession.messages
-                .filter(m => m.chatId === groupId)
-                .slice(-20);
-            const currentPhase = storyPlot.phases.find(p => p.id === currentSession.currentPhaseId);
-            const mission = currentPhase?.characterMissions.find(m => m.characterId === characterId);
-
-            try {
-                const res = await fetch('/api/event/char-respond', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        characterId,
-                        chatId: groupId,
-                        groupHistory,
-                        characterState: charState,
-                        phaseGoal: mission?.goal || '',
-                        arousalProbability
-                    })
-                });
-                const data = await res.json();
-
-                if (data.shouldRespond && data.content) {
-                    setSession(prev => prev ? {
-                        ...prev,
-                        messages: [...prev.messages, {
-                            id: generateId(),
-                            chatId: groupId,
-                            senderType: 'character',
-                            senderId: characterId,
-                            content: data.content,
-                            expressionKey: data.expressionKey,
-                            createdAt: new Date()
-                        }]
-                    } : null);
-                }
-            } catch (e) {
-                console.error('scheduleGroupResponse error', e);
-            }
-        }, delayMs);
-    }, []);
 
     const sendMessage = useCallback(async (chatId: string, content: string, type: 'text' | 'sticker' = 'text', stickerId?: string) => {
         if (!chatId) return;
@@ -527,16 +436,109 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const char = characters[chatId];
         if (char) {
             // Cancel any pending nudge since player spoke
-            vtCancelNudge(chatId); 
-            
-            // Schedule character response
-            // 1.5s delay + arousal factor handled by engine
+            vtCancelNudge(chatId);
+
             const charState = currentSession?.characterStates[chatId];
-            if (charState) {
-                // Determine response probability/delay based on PAD
-                // We use engine to schedule
-                // Note: ChatID = CharacterID for DM
-                 vtScheduleDM(char, chatId, 1.5, charState.pad.a);
+            if (charState && currentSession) {
+                // F1: Schedule character response (via useVirtualTime → onCharacterResponse → API)
+                vtScheduleDM(char, chatId, 1.5, charState.pad.a);
+
+                // F3 + F5 in parallel (background, no-await)
+                const chatHistory = currentSession.messages
+                    .filter(m => m.chatId === chatId)
+                    .slice(-15);
+                const currentPhase = storyPlot.phases.find(p => p.id === currentSession.currentPhaseId);
+                const mission = currentPhase?.characterMissions.find(m => m.characterId === chatId);
+
+                Promise.all([
+                    // F3: Analyze PAD delta
+                    fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'analyze',
+                            characterId: chatId,
+                            playerMessage: content,
+                            chatHistory,
+                            currentPad: charState.pad
+                        })
+                    }).then(r => r.json()).catch(() => null),
+                    // F5: Check goal (skip if already achieved or no mission)
+                    mission && !charState.goalAchieved
+                        ? fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'checkGoal',
+                                goal: mission.goal,
+                                completionHint: mission.completionHint,
+                                chatHistory: [...chatHistory, {
+                                    id: 'temp',
+                                    chatId,
+                                    senderType: 'player',
+                                    senderId: 'player',
+                                    content,
+                                    createdAt: new Date()
+                                }],
+                                currentlyAchieved: charState.goalAchieved
+                            })
+                        }).then(r => r.json()).catch(() => null)
+                        : Promise.resolve(null)
+                ]).then(([analyzeResult, goalResult]) => {
+                    // Update PAD and goalAchieved from F3/F5 results
+                    setSession(prev => {
+                        if (!prev) return null;
+                        const oldCharState = prev.characterStates[chatId];
+                        if (!oldCharState) return prev;
+                        const delta = analyzeResult?.padDelta || { p: 0, a: 0, d: 0 };
+                        const newGoalAchieved = goalResult?.achieved ?? oldCharState.goalAchieved;
+                        return {
+                            ...prev,
+                            characterStates: {
+                                ...prev.characterStates,
+                                [chatId]: {
+                                    ...oldCharState,
+                                    pad: {
+                                        p: Math.max(-1, Math.min(1, oldCharState.pad.p + delta.p)),
+                                        a: Math.max(0, Math.min(1, oldCharState.pad.a + delta.a)),
+                                        d: Math.max(-1, Math.min(1, oldCharState.pad.d + delta.d))
+                                    },
+                                    goalAchieved: newGoalAchieved
+                                }
+                            }
+                        };
+                    });
+
+                    // F4: Update memory (background, after F3)
+                    if (analyzeResult?.emotionTag) {
+                        fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'updateMemory',
+                                characterId: chatId,
+                                previousMemory: charState.memory,
+                                playerMessage: content,
+                                characterResponse: '',
+                                padDelta: analyzeResult.padDelta || { p: 0, a: 0, d: 0 },
+                                emotionTag: analyzeResult.emotionTag
+                            })
+                        }).then(r => r.json()).then(memResult => {
+                            if (memResult?.memory) {
+                                setSession(prev => prev ? {
+                                    ...prev,
+                                    characterStates: {
+                                        ...prev.characterStates,
+                                        [chatId]: {
+                                            ...prev.characterStates[chatId],
+                                            memory: memResult.memory
+                                        }
+                                    }
+                                } : null);
+                            }
+                        }).catch(e => console.error('[F4] Memory update failed', e));
+                    }
+                }).catch(e => console.error('[F3/F5] Analysis failed', e));
             }
             return;
         }
@@ -593,11 +595,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         console.log('[Phase] Advancing to:', nextPhaseId, nextPhase.progressLabel);
 
         // 1. Update Session State locally
+        const isEnding = nextPhase.id.startsWith('ending');
         setSession(prev => prev ? {
             ...prev,
             currentPhaseId: nextPhase.id,
             progressLabel: nextPhase.progressLabel,
-            virtualTime: nextPhase.virtualTime
+            virtualTime: nextPhase.virtualTime,
+            status: isEnding ? 'completed' : prev.status
         } : null);
 
         // 2. Trigger Phase Start API (Proactive messages)
@@ -620,25 +624,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             console.log('[Phase] API Response messages:', data.messages);
 
             if (data.messages && Array.isArray(data.messages)) {
-                // detailed scheduling
-                data.messages.forEach((msg: any, index: number) => {
-                    const delay = 1000 + (index * 1500) + Math.random() * 1000;
-                    
-                    // Add "typing" state
+                data.messages.forEach((msg: { characterId: string; chatId: string; content: string; expressionKey?: string }, index: number) => {
+                    const delay = 1500 + index * 2000;
                     setTimeout(() => {
-                         setTypingStates(prev => [...prev, {
-                             characterId: msg.characterId,
-                             chatId: msg.chatId,
-                             startedAt: new Date()
-                         }]);
-                    }, delay - 1000);
-
-                    // Push message
-                    setTimeout(() => {
-                        setTypingStates(prev => prev.filter(t => 
-                            !(t.chatId === msg.chatId && t.characterId === msg.characterId)
-                        ));
-                        
                         setSession(prev => {
                             if (!prev) return null;
                             return {

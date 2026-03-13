@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   const state = {
-    pad: characterState.pad || character.initialPad,
+    pad: characterState.pad || character.padConfig.initial,
     memory: characterState.memory || ''
   };
 
