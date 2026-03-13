@@ -211,8 +211,13 @@ export const charBoss: Character = {
     night: false
   },
   stickerPack: [
-    { id: "stk_boss_ok", path: "/stickers/boss/ok.png", emotion: "approval", padCondition: "p > 0.4" },
-    { id: "stk_boss_waiting", path: "/stickers/boss/waiting.png", emotion: "impatient", padCondition: "p < 0.0 && a > 0.5" }
+    { id: "stk_boss_ok", emoji: "✅", label: "好的", tone: "approval", padCondition: "p > 0.4" },
+    { id: "stk_boss_waiting", emoji: "⏰", label: "等著", tone: "impatient", padCondition: "p < 0.0 && a > 0.5" },
+    { id: "stk_boss_notes", emoji: "📋", label: "記錄", tone: "professional", padCondition: "p >= 0.0" },
+    { id: "stk_boss_red", emoji: "🔴", label: "不行", tone: "disapproval", padCondition: "p < -0.2" },
+    { id: "stk_boss_angry", emoji: "😤", label: "生氣", tone: "frustrated", padCondition: "p < -0.3 && a > 0.6" },
+    { id: "stk_boss_point", emoji: "👆", label: "注意", tone: "directive", padCondition: "d > 0.4" },
+    { id: "stk_boss_blank", emoji: "😑", label: "無語", tone: "indifferent", padCondition: "p < 0.0 && a < 0.3" }
   ],
   relationships: {
     char_coworker: {
@@ -299,9 +304,14 @@ export const charCoworker: Character = {
     night: false
   },
   stickerPack: [
-    { id: "stk_cw_cry", path: "/stickers/coworker/cry.png", emotion: "overwhelmed", padCondition: "p < -0.1 && a > 0.4" },
-    { id: "stk_cw_lol", path: "/stickers/coworker/lol.png", emotion: "amused", padCondition: "p > 0.4" },
-    { id: "stk_cw_busy", path: "/stickers/coworker/busy.png", emotion: "deflecting", padCondition: "a < 0.3" }
+    { id: "stk_cw_awkward", emoji: "😅", label: "尷尬", tone: "awkward", padCondition: "p < 0.1 && a > 0.3" },
+    { id: "stk_cw_cry", emoji: "😭", label: "崩潰", tone: "overwhelmed", padCondition: "p < -0.1 && a > 0.4" },
+    { id: "stk_cw_plead", emoji: "🥺", label: "可憐", tone: "pleading", padCondition: "p < 0.0" },
+    { id: "stk_cw_shocked", emoji: "😮", label: "驚訝", tone: "surprised", padCondition: "a > 0.5" },
+    { id: "stk_cw_lol", emoji: "😂", label: "哈哈", tone: "amused", padCondition: "p > 0.4" },
+    { id: "stk_cw_hide", emoji: "🙈", label: "摀眼", tone: "embarrassed", padCondition: "p < 0.0" },
+    { id: "stk_cw_dead", emoji: "💀", label: "已死", tone: "exhausted", padCondition: "p < -0.2 && a > 0.4" },
+    { id: "stk_cw_melt", emoji: "🫠", label: "融化", tone: "deflecting", padCondition: "a < 0.3" }
   ],
   relationships: {
     char_boss: {

@@ -86,9 +86,10 @@ export interface OnlineSchedule {
 // Sticker
 export interface Sticker {
   id: string;
-  path: string;
-  emotion: string;
-  padCondition: string;
+  emoji: string;      // e.g. "😅", "👍", "😤"
+  label: string;      // display label e.g. "尷尬", "好的", "生氣"
+  tone: string;       // emotional tone description
+  padCondition: string; // keep for PAD matching
 }
 
 // Relationship
@@ -258,6 +259,7 @@ export interface PADDelta {
 export interface MessageBubble {
   content: string;
   type: 'text' | 'sticker';
+  emojiContent?: string; // emoji character when type === 'sticker', e.g. "😅"
 }
 
 // F1 output: 1–4 message bubbles sent in one "burst"
