@@ -70,7 +70,7 @@ export function ChatWindow() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
@@ -116,7 +116,7 @@ export function ChatWindow() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       {/* Header */}
       <div className="flex h-14 items-center gap-3 border-b border-border bg-[var(--chat-header)] px-3 text-[var(--chat-header-foreground)]">
         <Button
@@ -163,7 +163,7 @@ export function ChatWindow() {
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4 py-3">
+      <ScrollArea className="min-h-0 flex-1 px-4 py-3">
         <div className="flex flex-col gap-3">
           {messages.map((message, index) => {
             const isPlayer = message.senderType === 'player';

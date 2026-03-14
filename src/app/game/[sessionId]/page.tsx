@@ -35,7 +35,7 @@ export default function GamePage() {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-6 bg-background text-center p-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">找不到遊戲存檔</h1>
+          <h1 className="text-2xl font-bold text-foreground">找不到練習存檔</h1>
           <p className="mt-2 text-muted-foreground font-mono text-sm">{sessionId}</p>
         </div>
 

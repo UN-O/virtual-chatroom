@@ -18,7 +18,7 @@ export function GameLayout() {
       <TimeBar />
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Sidebar - Chat List */}
         <div
           className={cn(
@@ -32,7 +32,7 @@ export function GameLayout() {
         {/* Main Area - Chat Window */}
         <div
           className={cn(
-            "flex-1",
+            "min-h-0 flex-1",
             !gameState.activeChatId ? "hidden md:block" : "block"
           )}
         >

@@ -18,7 +18,7 @@ export const LLM_CONFIG = {
   models: {
     openai: 'gpt-5-mini',
     anthropic: 'claude-sonnet-4-6',
-    google: 'gemini-2.5-flash',
+    google: 'gemini-3-flash-preview',
   },
 } as const;
 
@@ -47,8 +47,6 @@ function getGoogle() {
  * Priority: OpenAI > Anthropic > Google
  */
 export function getLLMProvider(): LLMProvider {
-  if (process.env.OPENAI_API_KEY) return 'openai';
-  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
   return 'google';
 }
 

@@ -35,6 +35,9 @@ export async function llmGenerateCharacterMessage(input: {
         phaseGoal: string;
         triggerDirection: string;
         chatHistory: Message[];
+        focusChatId?: string;
+        focusContext?: Message[];
+        backgroundContext?: Message[];
         isOnline: boolean;
         location: 'dm' | 'group';
     };
@@ -138,6 +141,9 @@ function buildScriptwriterPrompt(
         phaseGoal: string;
         triggerDirection: string;
         chatHistory: Message[];
+        focusChatId?: string;
+        focusContext?: Message[];
+        backgroundContext?: Message[];
         isOnline: boolean;
         location: 'dm' | 'group';
     }
@@ -189,8 +195,15 @@ ${state.memory || '還沒有特別的印象。'}
 ${situation.triggerDirection ? `發訊方向：${situation.triggerDirection}` : ''}
 ${!situation.isOnline ? `⚠️ 目前離線（休息中）：Andy 在你非上班/休息時傳訊給你，回應時語氣帶不悅或不情願，簡短冷淡即可。` : ''}
 
-# 對話紀錄
-${formatChatHistory(situation.chatHistory, character)}
+# 對話脈絡
+${formatConversationContexts({
+    character,
+    location: situation.location,
+    focusChatId: situation.focusChatId,
+    focusContext: situation.focusContext,
+    backgroundContext: situation.backgroundContext,
+    fallbackHistory: situation.chatHistory,
+})}
 
 ---
 
@@ -205,7 +218,10 @@ ${formatChatHistory(situation.chatHistory, character)}
 4. **情緒克制**：不用每句都爆發，有時候一句簡短的回應更有力道
 5. **嚴守角色**：口頭禪要自然出現，禁用詞絕對不能出現
 6. **繁體中文**：不要括號動作描述，不要旁白說明
-7. **不重複**：不重複對話紀錄中已說過的內容`;
+7. **不重複**：不重複對話紀錄中已說過的內容
+8. **聚焦主脈絡**：若「主要脈絡」與「背景脈絡」衝突，一律以主要脈絡為準
+9. **回覆目標限定**：本輪回覆必須直接對應主要脈絡裡 Andy 的最新訊息
+10. **背景僅參考**：不得把背景脈絡中的他人話題當成本輪主要回覆目標`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -230,6 +246,33 @@ function formatChatHistory(messages: Message[], character: Character): string {
             : '';
         return `${chatTag}${roleLabel}：${msg.content}`;
     }).join('\n');
+}
+
+function formatConversationContexts(input: {
+    character: Character;
+    location: 'dm' | 'group';
+    focusChatId?: string;
+    focusContext?: Message[];
+    backgroundContext?: Message[];
+    fallbackHistory: Message[];
+}): string {
+    const { character, location, focusChatId, focusContext = [], backgroundContext = [], fallbackHistory } = input;
+
+    const hasScopedContext = focusContext.length > 0 || backgroundContext.length > 0;
+    if (!hasScopedContext) {
+        return formatChatHistory(fallbackHistory, character);
+    }
+
+    const focusLabel = location === 'dm'
+        ? `私訊主脈絡（chat: ${focusChatId ?? character.id}）`
+        : `群組主脈絡（chat: ${focusChatId ?? 'group'}）`;
+
+    const focusText = formatChatHistory(focusContext, character);
+    const backgroundText = backgroundContext.length > 0
+        ? formatChatHistory(backgroundContext, character)
+        : '（無背景脈絡）';
+
+    return `## 主要脈絡（必須優先回應）\n${focusLabel}\n${focusText}\n\n## 背景脈絡（僅參考，不可覆寫主要脈絡）\n${backgroundText}`;
 }
 
 function getExpressionKey(pad: PAD): string {
@@ -274,4 +317,108 @@ function getSimpleFallback(character: Character): string {
     if (character.id === 'char_boss') return '嗯。';
     if (character.id === 'char_coworker') return '嗯嗯～';
     return '好。';
+}
+
+// ── Autonomous Message Decision ───────────────────────────────────────────────
+
+const autonomousDecisionSchema = z.object({
+    shouldSend: z.boolean().describe('是否決定主動傳訊息'),
+    reason: z.string().describe('決策理由，25 字以內'),
+    targetChatId: z.string().describe('傳送目標：DM 填入角色 ID（如 char_boss），群組填入群組 ID（如 group_office）'),
+    targetType: z.enum(['dm', 'group']).describe('傳送通道類型'),
+    content: z.string().describe('訊息內容，10–30 字；shouldSend=false 時填空字串'),
+    expressionKey: z.string().describe('表情鍵值：neutral / happy / sad / angry / surprised'),
+});
+
+export type AutonomousDecision = z.infer<typeof autonomousDecisionSchema>;
+
+/**
+ * llmDecideAutonomousMessage
+ * 角色主動發訊息決策器。
+ * 玩家一段時間未回覆時，由 LLM 決定角色是否要主動傳訊、傳到哪、傳什麼。
+ * 使用 generateText + Output.object（結構化輸出）。
+ */
+export async function llmDecideAutonomousMessage(input: {
+    character: Character;
+    state: { pad: PAD; memory: string };
+    phaseGoal: string;
+    dmChatId: string;
+    dmHistory: Message[];
+    groupHistories: { groupId: string; groupName: string; messages: Message[] }[];
+}): Promise<AutonomousDecision> {
+    const { character, state, phaseGoal, dmChatId, dmHistory, groupHistories } = input;
+
+    const dmLines = dmHistory.length > 0
+        ? dmHistory.slice(-8).map(m =>
+            `${m.senderType === 'player' ? 'Andy' : character.profile.name}：${m.content}`
+          ).join('\n')
+        : '（無對話）';
+
+    const groupSections = groupHistories.map(g => {
+        const lines = g.messages.slice(-8).map(m => {
+            const label = m.senderType === 'player' ? 'Andy'
+                : (m.senderId === character.id ? character.profile.name : '（其他人）');
+            return `${label}：${m.content}`;
+        }).join('\n') || '（無對話）';
+        return `### ${g.groupName}\n${lines}`;
+    }).join('\n\n');
+
+    const availableTargets = [
+        `- dm (chatId: ${dmChatId})：私訊 Andy`,
+        ...groupHistories.map(g => `- group (chatId: ${g.groupId})：群組「${g.groupName}」`),
+    ].join('\n');
+
+    const systemPrompt = `# 角色設定 — ${character.profile.name}
+${character.profile.description}
+個性：${character.personality.description}
+核心動機：${character.psychology.coreMotivation}
+說話風格：${character.speechStyle.description}
+口頭禪：${character.speechStyle.catchphrases.join('、') || '（無）'}
+絕對不說：${character.speechStyle.forbiddenWords.join('、') || '（無）'}
+
+# 當前狀態
+${describePADState(state.pad)}
+記憶：${state.memory || '無特別印象'}
+本幕目標：${phaseGoal}
+
+# 你是否要主動傳訊息？
+Andy 已有一段時間沒有傳訊息給你。根據你目前的情緒狀態、對話歷史、與本幕尚未達成的目標，判斷你是否要主動傳訊息給 Andy。
+
+## 可傳送頻道
+${availableTargets}
+
+## 規則
+- 只有在你真的有話想說（有情緒張力、或有推進目標的理由）時才傳
+- 不一定要傳，沒有必要請回傳 shouldSend=false
+- 訊息內容要符合你的說話風格，簡短自然，繁體中文
+- 長度：10–30 字，不加括號動作描述`;
+
+    const prompt = `# 私訊對話紀錄\n${dmLines}\n\n# 群組對話紀錄\n${groupSections || '（無群組）'}`;
+
+    try {
+        const { output } = await generateText({
+            model: getModel(),
+            output: Output.object({ schema: autonomousDecisionSchema }),
+            system: systemPrompt,
+            prompt,
+            providerOptions: {
+                google: {
+                    thinkingConfig: { thinkingBudget: 0 },
+                } satisfies GoogleLanguageModelOptions,
+            },
+        });
+
+        console.log(`[Autonomous] ${character.profile.name} decision:`, output);
+        return output;
+    } catch (error) {
+        console.error('[Autonomous] Error deciding autonomous message:', error);
+        return {
+            shouldSend: false,
+            reason: 'LLM error',
+            targetChatId: dmChatId,
+            targetType: 'dm',
+            content: '',
+            expressionKey: 'neutral',
+        };
+    }
 }

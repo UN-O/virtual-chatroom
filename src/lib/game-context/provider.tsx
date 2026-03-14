@@ -23,9 +23,10 @@ import React, {
 } from 'react';
 
 import { GameContext } from './context';
-import { generateId, initializeNewSession, getChatRooms, computeVirtualTimeLabel } from './helpers';
+import { generateId, initializeNewSession, getChatRooms, computeVirtualTimeLabel, virtualTimeToRealMs, getPhaseCapVirtualTime } from './helpers';
 import { useSendMessage } from './use-send-message';
 import { usePhaseManager } from './use-phase-manager';
+import { NudgeCounter } from '@/lib/nudge/counter';
 
 import { LocalSessionAdapter } from '../storage/local-adapter';
 import { storyPlot, characters, groups, allCharacterMissions } from '../story-data';
@@ -33,6 +34,12 @@ import { areAllGoalsAchieved } from '../engine/phase';
 import { useVirtualTime } from '@/hooks/useVirtualTime';
 
 import type { ClientSession } from '../types';
+
+/**
+ * 初始 phase-start 去重：避免 dev 模式下 mount/effect 重跑造成重複 POST。
+ */
+const initialPhaseStartDedupRef = new Map<string, number>();
+const INITIAL_PHASE_START_DEDUP_MS = 5000;
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
 
@@ -67,7 +74,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
 
     /** 追蹤每個 chatId 的 nudge 次數，供 nudge 升壓邏輯使用 */
-    const nudgeCountRef = useRef<Record<string, number>>({});
+    const nudgeCounterRef = useRef(new NudgeCounter());
 
     /** 追蹤上次 session.messages.length，用來偵測新訊息並更新 unreadCounts */
     const prevMsgCountRef = useRef<number>(0);
@@ -123,6 +130,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
             // 全新 session（無任何訊息）→ 觸發 phase-start，讓角色主動開場
             if (s.messages.length === 0) {
+                const dedupKey = `${sessionId}:${s.currentPhaseId}`;
+                const nowTs = Date.now();
+                const lastTriggerAt = initialPhaseStartDedupRef.get(dedupKey);
+                if (lastTriggerAt && nowTs - lastTriggerAt < INITIAL_PHASE_START_DEDUP_MS) {
+                    return;
+                }
+                initialPhaseStartDedupRef.set(dedupKey, nowTs);
+
                 const phaseStart = Date.now();
                 fetch('/api/event/phase-start', {
                     method: 'POST',
@@ -193,9 +208,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
     }, [session]);
 
-    // ── Phase Max Time Enforcement ─────────────────────────────────────────
+    // ── Phase Virtual Time Enforcement ────────────────────────────────────
     //
-    // 當 phase 的 maxRealMinutes 到期時，自動呼叫 advancePhase()。
+    // 虛擬時鐘到達下一個 phase 的起始虛擬時間時，自動呼叫 advancePhase()。
+    // 速率：VIRTUAL_TIME_RATIO_MS ms 真實時間 = 1 虛擬分鐘
 
     const phaseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -206,16 +222,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             phaseTimeoutRef.current = null;
         }
 
-        // 只在 active session 且非 ending phase 時啟動
+        // 只在 active session 時啟動
         if (!session || session.status !== 'active') return;
-        if (session.currentPhaseId.startsWith('ending')) return;
 
         const currentPhase = storyPlot.phases.find(p => p.id === session.currentPhaseId);
-        if (!currentPhase || !currentPhase.maxRealMinutes) return;
+        if (!currentPhase) return;
 
-        const maxMs = currentPhase.maxRealMinutes * 60 * 1000;
+        const capVirtualTime = getPhaseCapVirtualTime(currentPhase, storyPlot.phases);
+        if (!capVirtualTime) return; // ending phase，無 branch
+
+        const totalMs = virtualTimeToRealMs(currentPhase.virtualTime, capVirtualTime);
+        if (totalMs <= 0) return;
         const elapsed = Date.now() - phaseStartedAtRef.current;
-        const remaining = Math.max(0, maxMs - elapsed);
+        const remaining = Math.max(0, totalMs - elapsed);
 
         phaseTimeoutRef.current = setTimeout(() => {
             phaseTimeoutRef.current = null;
@@ -236,6 +255,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // useVirtualTime 只負責 nudge 計時器。
     // 角色回應延遲改用 t_delay 模式（見 useSendMessage）。
 
+    /**
+     * autonomousCheckerRef：跨 hook 傳遞 useSendMessage 的自主檢查方法。
+     * 在 useVirtualTime 定義之後、useSendMessage 初始化之後才寫入。
+     * onNudge 透過 ref 拿到最新值（非同步呼叫，一定在賦值後才執行）。
+     */
+    const autonomousCheckerRef = useRef<{
+        start: (characterId: string) => { seq: number; signal: AbortSignal };
+        isLatest: (characterId: string, seq: number) => boolean;
+    } | null>(null);
+
+    /**
+     * scheduleCheckRef：供 onNudge 重新排程自主檢查（避免循環依賴）。
+     * 在 useVirtualTime 返回後立即填入 vtScheduleNudge。
+     */
+    const scheduleCheckRef = useRef<((characterId: string, chatId: string, delay: number) => void) | null>(null);
+
     const {
         scheduleNudge: vtScheduleNudge,
         cancelNudge: vtCancelNudge,
@@ -246,58 +281,105 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             const cur = sessionRef.current;
             if (!cur) return;
 
-            // 遞增 nudge 次數（用於升壓邏輯）
-            nudgeCountRef.current[chatId] = (nudgeCountRef.current[chatId] ?? 0) + 1;
-            const currentNudgeCount = nudgeCountRef.current[chatId];
+            const charState = cur.characterStates[characterId];
+            if (charState?.goalAchieved) return;
+
+            // ── 機率門檻：以 PAD.a 決定是否觸發 LLM 檢查 ──────────────────
+            // a=1.0 → 必定觸發；a=0.3 → 30% 機率；a=0 → 永不觸發
+            const arousal = charState?.pad.a ?? 0.5;
+            if (Math.random() > arousal) {
+                // 機率未通過：靜默跳過，重新排程下一次檢查
+                scheduleCheckRef.current?.(characterId, chatId, 15);
+                return;
+            }
+
+            const checker = autonomousCheckerRef.current;
+            if (!checker) return;
+
+            // ── 建立本次自主檢查序號與 AbortSignal ────────────────────────
+            const { seq, signal } = checker.start(characterId);
 
             const currentPhase = storyPlot.phases.find(p => p.id === cur.currentPhaseId);
+            const mission = currentPhase?.characterMissions.find(m => m.characterId === characterId);
+
+            const dmHistory = cur.messages.filter(m => m.chatId === characterId).slice(-10);
+            const groupHistories = groups
+                .filter(g => g.members.includes(characterId))
+                .map(g => ({
+                    groupId: g.id,
+                    groupName: g.name,
+                    messages: cur.messages.filter(m => m.chatId === g.id).slice(-10),
+                }));
+
             try {
-                const res = await fetch('/api/event/nudge', {
+                const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    signal,
                     body: JSON.stringify({
+                        action: 'autonomousMessage',
                         characterId,
-                        chatId,
-                        chatHistory: cur.messages.filter(m => m.chatId === chatId).slice(-10),
-                        characterState: cur.characterStates[characterId],
-                        phaseGoal: currentPhase?.characterMissions
-                            .find(m => m.characterId === characterId)?.goal || '',
-                        nudgeCount: currentNudgeCount
+                        currentPad: charState?.pad || { p: 0, a: 0.5, d: 0 },
+                        memory: charState?.memory || '',
+                        phaseGoal: mission?.goal || '',
+                        dmHistory,
+                        groupHistories,
                     })
                 });
-                const data = await res.json();
-                if (data.content) {
-                    const vtLabel = getVirtualTimeLabel();
-                    setSession(prev => prev ? {
-                        ...prev,
-                        messages: [...prev.messages, {
-                            id: generateId(),
-                            chatId,
-                            senderType: 'character',
-                            senderId: characterId,
-                            content: data.content,
-                            expressionKey: 'neutral',
-                            virtualTimeLabel: vtLabel,
-                            createdAt: new Date()
-                        }]
-                    } : null);
+
+                if (!checker.isLatest(characterId, seq)) return;
+
+                if (!res.ok) {
+                    console.error(`[Autonomous] API failed ${res.status}`);
+                } else {
+                    const data = await res.json();
+                    if (!checker.isLatest(characterId, seq)) return;
+
+                    if (data.shouldSend && data.content) {
+                        const vtLabel = getVirtualTimeLabel();
+                        setSession(prev => prev ? {
+                            ...prev,
+                            messages: [...prev.messages, {
+                                id: generateId(),
+                                chatId: data.targetChatId,
+                                senderType: 'character' as const,
+                                senderId: characterId,
+                                content: data.content,
+                                expressionKey: data.expressionKey || 'neutral',
+                                virtualTimeLabel: vtLabel,
+                                createdAt: new Date()
+                            }]
+                        } : null);
+                    }
                 }
             } catch (e) {
-                console.error('[Nudge] Error', e);
+                if ((e as Error)?.name === 'AbortError') return;
+                console.error('[Autonomous] Error', e);
+            }
+
+            // ── 重新排程下一次自主檢查（目標未達成時繼續每 15 秒檢查）──────
+            if (!sessionRef.current?.characterStates[characterId]?.goalAchieved) {
+                scheduleCheckRef.current?.(characterId, chatId, 15);
             }
         },
     });
 
+    // 填入 scheduleCheckRef（onNudge 透過此 ref 重新排程，避免循環依賴）
+    scheduleCheckRef.current = vtScheduleNudge;
+
     // ── Message Sending ────────────────────────────────────────────────────
 
-    const sendMessage = useSendMessage({
+    const { sendMessage, startAutonomousCheck, isLatestAutonomousCheck } = useSendMessage({
         sessionRef,
         getVirtualTimeLabel,
         vtCancelNudge,
         vtScheduleNudge,
         setSession,
-        resetNudgeCount: (chatId) => { nudgeCountRef.current[chatId] = 0; },
+        resetNudgeCount: (chatId) => { nudgeCounterRef.current.reset(chatId); },
     });
+
+    // 填入 autonomousCheckerRef（onNudge 透過此 ref 管理自主檢查序號）
+    autonomousCheckerRef.current = { start: startAutonomousCheck, isLatest: isLatestAutonomousCheck };
 
     // ── Phase Management ───────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@
  * 讓 provider.tsx 保持精簡，此 hook 可獨立閱讀與測試。
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 
 import { generateId } from './helpers';
@@ -48,7 +48,80 @@ export function useSendMessage({
     setSession,
     resetNudgeCount,
 }: UseSendMessageOptions) {
-    return useCallback(async (
+    /** 每個 DM chat 的請求序號（最新序號勝出） */
+    const dmRequestSeqRef = useRef<Record<string, number>>({});
+    /** 每個 DM chat 的 in-flight request controller（新訊息會中止舊請求） */
+    const dmAbortRef = useRef<Record<string, AbortController | undefined>>({});
+
+    /** 每個群組 chat 的波次序號（最新波次勝出） */
+    const groupRequestSeqRef = useRef<Record<string, number>>({});
+    /** 每個群組 chat 的 in-flight wave controller（新訊息會中止舊波次） */
+    const groupAbortRef = useRef<Record<string, AbortController | undefined>>({});
+
+    /** 每個角色的自主檢查序號（最新序號勝出） */
+    const autonomousSeqRef = useRef<Record<string, number>>({});
+    /** 每個角色的自主檢查 AbortController（玩家新訊息時中止） */
+    const autonomousAbortRef = useRef<Record<string, AbortController | undefined>>({});
+
+    useEffect(() => {
+        return () => {
+            Object.values(dmAbortRef.current).forEach(c => c?.abort());
+            Object.values(groupAbortRef.current).forEach(c => c?.abort());
+            Object.values(autonomousAbortRef.current).forEach(c => c?.abort());
+        };
+    }, []);
+
+    const startLatestDMRequest = useCallback((chatId: string) => {
+        dmAbortRef.current[chatId]?.abort();
+        const controller = new AbortController();
+        dmAbortRef.current[chatId] = controller;
+
+        const nextSeq = (dmRequestSeqRef.current[chatId] ?? 0) + 1;
+        dmRequestSeqRef.current[chatId] = nextSeq;
+
+        return { seq: nextSeq, signal: controller.signal };
+    }, []);
+
+    const isLatestDMRequest = useCallback((chatId: string, seq: number) => {
+        return dmRequestSeqRef.current[chatId] === seq;
+    }, []);
+
+    const startLatestGroupRequest = useCallback((chatId: string) => {
+        groupAbortRef.current[chatId]?.abort();
+        const controller = new AbortController();
+        groupAbortRef.current[chatId] = controller;
+
+        const nextSeq = (groupRequestSeqRef.current[chatId] ?? 0) + 1;
+        groupRequestSeqRef.current[chatId] = nextSeq;
+
+        return { seq: nextSeq, signal: controller.signal };
+    }, []);
+
+    const isLatestGroupRequest = useCallback((chatId: string, seq: number) => {
+        return groupRequestSeqRef.current[chatId] === seq;
+    }, []);
+
+    /** 開始一次自主檢查（同一角色的舊檢查會被中止） */
+    const startAutonomousCheck = useCallback((characterId: string) => {
+        autonomousAbortRef.current[characterId]?.abort();
+        const controller = new AbortController();
+        autonomousAbortRef.current[characterId] = controller;
+        const nextSeq = (autonomousSeqRef.current[characterId] ?? 0) + 1;
+        autonomousSeqRef.current[characterId] = nextSeq;
+        return { seq: nextSeq, signal: controller.signal };
+    }, []);
+
+    const isLatestAutonomousCheck = useCallback((characterId: string, seq: number) => {
+        return autonomousSeqRef.current[characterId] === seq;
+    }, []);
+
+    /** 中止某角色目前進行中的自主檢查（不遞增序號） */
+    const cancelAutonomousCheck = useCallback((characterId: string) => {
+        autonomousAbortRef.current[characterId]?.abort();
+        delete autonomousAbortRef.current[characterId];
+    }, []);
+
+    const sendMessage = useCallback(async (
         chatId: string,
         content: string,
         type: 'text' | 'sticker' = 'text',
@@ -82,9 +155,14 @@ export function useSendMessage({
         // ── DM ───────────────────────────────────────────────────────────────
         const char = characters[chatId];
         if (char) {
+            cancelAutonomousCheck(chatId);
+            const { seq, signal } = startLatestDMRequest(chatId);
             handleDM({
                 chatId, content, cur,
                 getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession, resetNudgeCount,
+                dmRequestSeq: seq,
+                dmRequestSignal: signal,
+                isLatestDMRequest,
             });
             return;
         }
@@ -92,12 +170,19 @@ export function useSendMessage({
         // ── 群組 ─────────────────────────────────────────────────────────────
         const group = groups.find(g => g.id === chatId);
         if (group) {
+            group.members.forEach(memberId => cancelAutonomousCheck(memberId));
+            const { seq, signal } = startLatestGroupRequest(chatId);
             handleGroup({
                 group, chatId, content, cur,
-                getVirtualTimeLabel, setSession,
+                getVirtualTimeLabel, setSession, vtScheduleNudge,
+                groupRequestSeq: seq,
+                groupRequestSignal: signal,
+                isLatestGroupRequest,
             });
         }
-    }, [vtCancelNudge, vtScheduleNudge, sessionRef, getVirtualTimeLabel, setSession, resetNudgeCount]);
+    }, [vtCancelNudge, vtScheduleNudge, sessionRef, getVirtualTimeLabel, setSession, resetNudgeCount, startLatestDMRequest, isLatestDMRequest, startLatestGroupRequest, isLatestGroupRequest, cancelAutonomousCheck]);
+
+    return { sendMessage, startAutonomousCheck, isLatestAutonomousCheck, cancelAutonomousCheck };
 }
 
 // ── DM Handler ────────────────────────────────────────────────────────────────
@@ -111,6 +196,9 @@ interface HandleDMOptions {
     vtScheduleNudge: (characterId: string, chatId: string, delaySeconds: number) => void;
     setSession: Dispatch<SetStateAction<ClientSession | null>>;
     resetNudgeCount: (chatId: string) => void;
+    dmRequestSeq: number;
+    dmRequestSignal: AbortSignal;
+    isLatestDMRequest: (chatId: string, seq: number) => boolean;
 }
 
 /** 將 phase ID 對應到 OnlineSchedule 鍵名（與 helpers.ts 保持一致） */
@@ -124,6 +212,7 @@ function getOnlineScheduleKey(phaseId: string): keyof import('../types').OnlineS
 function handleDM({
     chatId, content, cur,
     getVirtualTimeLabel, vtCancelNudge, vtScheduleNudge, setSession, resetNudgeCount,
+    dmRequestSeq, dmRequestSignal, isLatestDMRequest,
 }: HandleDMOptions) {
     vtCancelNudge(chatId);
     resetNudgeCount(chatId);
@@ -160,15 +249,25 @@ function handleDM({
         });
     }
 
-    // 綜合 DM + 群組歷史作為角色的上下文
+    // 綜合 DM + 群組歷史作為角色上下文，並明確分出主要/背景脈絡
     const dmHistory = cur.messages.filter(m => m.chatId === chatId).slice(-10);
     const groupHistory = cur.messages
         .filter(m => groups.some(g => g.id === m.chatId))
         .slice(-10);
+    const playerTempMessage: Message = {
+        id: 'temp',
+        chatId,
+        senderType: 'player' as const,
+        senderId: 'player',
+        content,
+        createdAt: new Date()
+    };
+    const focusContext: Message[] = [...dmHistory, playerTempMessage];
+    const backgroundContext: Message[] = [...groupHistory];
     const combinedHistory: Message[] = [
         ...dmHistory,
         ...groupHistory,
-        { id: 'temp', chatId, senderType: 'player' as const, senderId: 'player', content, createdAt: new Date() }
+        playerTempMessage
     ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     const tStart = Date.now();
@@ -179,10 +278,14 @@ function handleDM({
     fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: dmRequestSignal,
         body: JSON.stringify({
             action: 'respond',
             characterId: chatId,
             playerMessage: content,
+            focusChatId: chatId,
+            focusContext,
+            backgroundContext,
             chatHistory: combinedHistory,
             currentPad: charState?.pad || { p: 0, a: 0.5, d: 0 },
             memory: charState?.memory || '',
@@ -192,6 +295,8 @@ function handleDM({
             isOnline
         })
     }).then(r => r.json()).then(data => {
+        if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
+
         const burst: Array<{ content: string }> = data?.messages;
         if (!burst?.length) return;
 
@@ -201,6 +306,7 @@ function handleDM({
 
         // First bubble: show at `remaining`, mark 已讀, apply PAD delta (from F3 inside respond)
         setTimeout(() => {
+            if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
             const vtLabel = getVirtualTimeLabel();
             setSession(prev => {
                 if (!prev) return null;
@@ -256,6 +362,7 @@ function handleDM({
         // Remaining bubbles: stagger at BUBBLE_GAP intervals
         burst.slice(1).forEach((bubble, i) => {
             setTimeout(() => {
+                if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
                 const vtLabel = getVirtualTimeLabel();
                 setSession(prev => prev ? {
                     ...prev,
@@ -275,10 +382,14 @@ function handleDM({
 
         // 所有泡泡顯示完後才開始 nudge 計時
         const totalDelay = remaining + (burst.length - 1) * BUBBLE_GAP;
-        setTimeout(() => vtScheduleNudge(chatId, chatId, 45), totalDelay);
+        setTimeout(() => {
+            if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
+            vtScheduleNudge(chatId, chatId, 15);
+        }, totalDelay);
 
         // F4：更新記憶（F3 的 emotionTag 已由 respond 回傳，直接使用）
         if (charState && data.emotionTag) {
+            if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
             fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -292,6 +403,7 @@ function handleDM({
                     emotionTag: data.emotionTag
                 })
             }).then(r => r.json()).then(res => {
+                if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
                 if (res?.memory) {
                     setSession(prev => prev ? {
                         ...prev,
@@ -303,11 +415,15 @@ function handleDM({
                 }
             }).catch(e => console.error('[F4] Memory update failed', e));
         }
-    }).catch(e => console.error('[F1] DM response error', e));
+    }).catch(e => {
+        if ((e as Error)?.name === 'AbortError') return;
+        console.error('[F1] DM response error', e);
+    });
 
     // F5：背景執行 goal 檢查（未達成且有 mission 才執行）
     // F3 已由 action=respond 內部執行，此處只需 F5。
     if (charState && mission && !charState.goalAchieved) {
+        if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
         fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -319,7 +435,10 @@ function handleDM({
                 currentlyAchieved: false
             })
         }).then(r => r.json()).then(goalResult => {
+            if (!isLatestDMRequest(chatId, dmRequestSeq)) return;
             if (goalResult?.achieved) {
+                vtCancelNudge(chatId);
+                resetNudgeCount(chatId);
                 setSession(prev => {
                     if (!prev) return null;
                     const old = prev.characterStates[chatId];
@@ -349,15 +468,21 @@ interface HandleGroupOptions {
     cur: ClientSession;
     getVirtualTimeLabel: () => string;
     setSession: Dispatch<SetStateAction<ClientSession | null>>;
+    vtScheduleNudge: (characterId: string, chatId: string, delaySeconds: number) => void;
+    groupRequestSeq: number;
+    groupRequestSignal: AbortSignal;
+    isLatestGroupRequest: (chatId: string, seq: number) => boolean;
 }
 
 function handleGroup({
     group, chatId, content, cur,
-    getVirtualTimeLabel, setSession,
+    getVirtualTimeLabel, setSession, vtScheduleNudge, groupRequestSeq, groupRequestSignal, isLatestGroupRequest,
 }: HandleGroupOptions) {
     const groupHistory = cur.messages.filter(m => m.chatId === chatId).slice(-15);
 
     group.members.forEach(memberId => {
+        if (!isLatestGroupRequest(chatId, groupRequestSeq)) return;
+
         const memberChar = characters[memberId];
         const memberState = cur.characterStates[memberId];
         if (!memberChar || !memberState) return;
@@ -380,6 +505,7 @@ function handleGroup({
             fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: groupRequestSignal,
                 body: JSON.stringify({
                     action: 'groupRespond',
                     characterId: memberId,
@@ -394,6 +520,7 @@ function handleGroup({
             fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: groupRequestSignal,
                 body: JSON.stringify({
                     action: 'analyze',
                     characterId: memberId,
@@ -403,6 +530,8 @@ function handleGroup({
                 })
             }).then(r => r.json()).catch(() => null)
         ]).then(([f2Data, analyzeResult]) => {
+            if (!isLatestGroupRequest(chatId, groupRequestSeq)) return;
+
             // Apply F3 PAD delta (silent background update)
             if (analyzeResult?.padDelta) {
                 setSession(prev => {
@@ -432,6 +561,7 @@ function handleGroup({
             const remaining = Math.max(0, tDelay - elapsed);
 
             setTimeout(() => {
+                if (!isLatestGroupRequest(chatId, groupRequestSeq)) return;
                 const vtLabel = getVirtualTimeLabel();
                 setSession(prev => prev ? {
                     ...prev,
@@ -446,7 +576,12 @@ function handleGroup({
                         createdAt: new Date()
                     }]
                 } : null);
+                // 群組回應後排程自主檢查（15 秒後角色可主動發訊）
+                vtScheduleNudge(memberId, memberId, 15);
             }, remaining);
-        }).catch(e => console.error(`[F2/F3] Group response error for ${memberId}`, e));
+        }).catch(e => {
+            if ((e as Error)?.name === 'AbortError') return;
+            console.error(`[F2/F3] Group response error for ${memberId}`, e);
+        });
     });
 }

@@ -38,7 +38,7 @@ export function ChatList() {
                 key={room.id}
                 onClick={() => setActiveChat(room.id)}
                 className={cn(
-                  "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sidebar-accent",
+                  "flex w-full items-center gap-3 overflow-hidden px-4 py-3 text-left transition-colors hover:bg-sidebar-accent",
                   isActive && "bg-sidebar-accent"
                 )}
               >
@@ -81,23 +81,23 @@ export function ChatList() {
                 </div>
 
                 {/* Content */}
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <div className="flex items-center justify-between">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden">
+                  <div className="flex min-w-0 items-center justify-between">
                     <span className={cn(
-                      "truncate font-medium",
+                      "min-w-0 flex-1 truncate font-medium",
                       room.unreadCount > 0 ? "text-sidebar-foreground" : "text-sidebar-foreground"
                     )}>
                       {room.name}
                     </span>
                     {room.lastMessageTime && (
-                      <span className="ml-2 text-xs text-muted-foreground">
+                      <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                         {formatTime(room.lastMessageTime)}
                       </span>
                     )}
                   </div>
                   {room.lastMessage && (
                     <p className={cn(
-                      "truncate text-sm",
+                      "w-full truncate text-sm",
                       room.unreadCount > 0 ? "font-medium text-sidebar-foreground" : "text-muted-foreground"
                     )}>
                       {room.lastMessage}

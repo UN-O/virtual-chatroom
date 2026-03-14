@@ -14,6 +14,9 @@ export async function llmAnalyzePlayerMessage(input: {
   character: Character;
   currentPad: PAD;
   playerMessage: string;
+  focusChatId?: string;
+  focusContext?: Message[];
+  backgroundContext?: Message[];
   chatHistory: Message[];
   traumaTriggers: Trauma[];
 }): Promise<{
@@ -21,7 +24,16 @@ export async function llmAnalyzePlayerMessage(input: {
   traumaTriggered?: string;
   emotionTag: string;
 }> {
-  const { character, currentPad, playerMessage, chatHistory, traumaTriggers } = input;
+  const {
+    character,
+    currentPad,
+    playerMessage,
+    focusChatId,
+    focusContext = [],
+    backgroundContext = [],
+    chatHistory,
+    traumaTriggers,
+  } = input;
 
   const systemPrompt = `你是一個情感分析器，分析Andy訊息對角色 ${character.profile.name} 的影響。
 
@@ -40,18 +52,28 @@ ${describePADState(currentPad)}
 ## 分析規則
 - padDelta 範圍：p (-0.3 ~ +0.3), a (-0.2 ~ +0.2), d (-0.2 ~ +0.2)
 - 若觸發創傷，p 應該下降 0.2-0.3
-- emotionTag 選擇：warm, cold, hurt, amused, annoyed, neutral, anxious, relieved`;
+- emotionTag 選擇：warm, cold, hurt, amused, annoyed, neutral, anxious, relieved
+- 主要脈絡優先：若主要脈絡與背景脈絡衝突，僅以主要脈絡判斷 PAD 變化
+- 背景脈絡僅作語氣與關係參考，不可主導本輪分析`;
 
   const recentContext = chatHistory.slice(-5).map(m => 
     `${m.senderType === 'player' ? 'Andy' : character.profile.name}: ${m.content}`
   ).join('\n');
+
+  const scopedContext = formatAnalysisContext({
+    character,
+    focusChatId,
+    focusContext,
+    backgroundContext,
+    fallbackContext: recentContext,
+  });
 
   try {
     const { output } = await generateText({
       model: getModel(),
       system: systemPrompt,
       prompt: `最近對話：
-${recentContext}
+${scopedContext}
 
 Andy最新訊息：「${playerMessage}」
 
@@ -79,6 +101,30 @@ Andy最新訊息：「${playerMessage}」
     console.error('[F3] Error analyzing player message:', error);
     return analyzePlayerMessageFallback(character, playerMessage, currentPad);
   }
+}
+
+function formatAnalysisContext(input: {
+  character: Character;
+  focusChatId?: string;
+  focusContext: Message[];
+  backgroundContext: Message[];
+  fallbackContext: string;
+}): string {
+  const { character, focusChatId, focusContext, backgroundContext, fallbackContext } = input;
+  const hasScopedContext = focusContext.length > 0 || backgroundContext.length > 0;
+  if (!hasScopedContext) return fallbackContext;
+
+  const toLines = (messages: Message[]) => {
+    if (messages.length === 0) return '（無）';
+    return messages.slice(-8).map(m => {
+      const sender = m.senderType === 'player'
+        ? 'Andy'
+        : (m.senderId === character.id ? character.profile.name : '其他角色');
+      return `${sender}: ${m.content}`;
+    }).join('\n');
+  };
+
+  return `【主要脈絡｜chat: ${focusChatId ?? character.id}】\n${toLines(focusContext)}\n\n【背景脈絡｜僅參考】\n${toLines(backgroundContext)}`;
 }
 
 // F4: llmUpdateMemory has been extracted to lib/engine/memory.ts

@@ -43,8 +43,8 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground p-8 flex flex-col items-center gap-10">
       <header className="text-center space-y-2">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground">Story Chat</h1>
-        <p className="text-muted-foreground">Local-First 互動劇情體驗 v0.1</p>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground">Virtual Chatroom</h1>
+        <p className="text-muted-foreground">互動劇情體驗 v0.2</p>
       </header>
 
       <div className="w-full max-w-md space-y-6">
@@ -53,7 +53,7 @@ export default function Home() {
           onClick={handleNewGame}
           className="w-full py-4 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl shadow-lg font-bold text-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
         >
-          <span>＋ 開始新遊戲</span>
+          <span>＋ 開始新劇情</span>
         </button>
 
         {/* Sessions List */}

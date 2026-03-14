@@ -21,6 +21,7 @@ export function DebugPanel() {
   const { gameState, toggleDebugMode, getCurrentPhase } = useGame();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     pad: true,
+    memory: true,
     goals: true,
     branches: false,
     events: false,
@@ -93,6 +94,32 @@ export function DebugPanel() {
                     <PADBar label="P" value={state.pad.p} min={-1} max={1} color="bg-green-500" />
                     <PADBar label="A" value={state.pad.a} min={0} max={1} color="bg-yellow-500" />
                     <PADBar label="D" value={state.pad.d} min={-1} max={1} color="bg-blue-500" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Memory Section */}
+        <SectionHeader
+          title="Character Memory"
+          expanded={expandedSections.memory}
+          onToggle={() => toggleSection('memory')}
+        />
+        {expandedSections.memory && (
+          <div className="mb-3 space-y-2">
+            {Object.values(characters).map(char => {
+              const state = gameState.session.characterStates[char.id];
+              if (!state) return null;
+
+              return (
+                <div key={`memory-${char.id}`} className="rounded-md border border-border p-2">
+                  <div className="mb-1 text-xs font-medium text-foreground">
+                    {char.profile.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground whitespace-pre-wrap wrap-break-word">
+                    {state.memory || "(empty)"}
                   </div>
                 </div>
               );

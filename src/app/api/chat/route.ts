@@ -2,7 +2,8 @@ import { characters } from '@/lib/story-data';
 import type { Message } from '@/lib/types';
 import { 
   llmGenerateCharacterMessage, 
-  llmGenerateGroupResponse 
+  llmGenerateGroupResponse,
+  llmDecideAutonomousMessage
 } from '@/lib/llm/generator';
 import { 
   llmAnalyzePlayerMessage, 
@@ -22,6 +23,7 @@ import {
  * - 'groupRespond': F2 - Generate group response (after F6)
  * - 'decideGroup': F6 - Decide if should respond to group
  * - 'updateMemory': F4 - Update character memory
+ * - 'autonomousMessage': New action for autonomous message handling
  */
 export async function POST(req: Request) {
   const body = await req.json();
@@ -44,6 +46,9 @@ export async function POST(req: Request) {
       case 'updateMemory':
         return handleUpdateMemory(body);
       
+      case 'autonomousMessage':
+        return handleAutonomousMessage(body);
+
       case 'respond':
       default:
         return handleRespond(body);
@@ -60,6 +65,9 @@ export async function POST(req: Request) {
 async function handleRespond(body: {
   characterId: string;
   playerMessage?: string;
+  focusChatId?: string;
+  focusContext?: Message[];
+  backgroundContext?: Message[];
   chatHistory?: Message[];
   currentPad?: { p: number; a: number; d: number };
   memory?: string;
@@ -71,6 +79,9 @@ async function handleRespond(body: {
   const {
     characterId,
     playerMessage,
+    focusChatId,
+    focusContext = [],
+    backgroundContext = [],
     chatHistory = [],
     currentPad = { p: 0, a: 0.5, d: 0.5 },
     memory = '',
@@ -85,17 +96,11 @@ async function handleRespond(body: {
     return Response.json({ error: 'Character not found' }, { status: 404 });
   }
 
-  // Add player message to history if provided
-  const fullHistory = playerMessage 
-    ? [...chatHistory, { 
-        id: `temp_${Date.now()}`,
-        chatId: '',
-        senderId: 'player',
-        senderType: 'player' as const,
-        content: playerMessage,
-        createdAt: new Date()
-      }]
-    : chatHistory;
+  const fullHistory = ensureLatestPlayerMessage(chatHistory, playerMessage, focusChatId ?? characterId);
+  const resolvedFocusContext = focusContext.length > 0
+    ? ensureLatestPlayerMessage(focusContext, playerMessage, focusChatId ?? characterId)
+    : fullHistory;
+  const resolvedBackgroundContext = backgroundContext;
 
   // Parallel execution: Generate response and analyze emotion (if player message exists)
   const [generationResult, analysisResult] = await Promise.all([
@@ -106,6 +111,9 @@ async function handleRespond(body: {
         phaseGoal,
         triggerDirection,
         chatHistory: fullHistory,
+        focusChatId: focusChatId ?? characterId,
+        focusContext: resolvedFocusContext,
+        backgroundContext: resolvedBackgroundContext,
         isOnline,
         location
       }
@@ -115,7 +123,10 @@ async function handleRespond(body: {
           character,
           currentPad,
           playerMessage,
-          chatHistory,
+          focusChatId: focusChatId ?? characterId,
+          focusContext: resolvedFocusContext,
+          backgroundContext: resolvedBackgroundContext,
+          chatHistory: fullHistory,
           traumaTriggers: character.psychology.traumas
         })
       : Promise.resolve({ 
@@ -132,6 +143,26 @@ async function handleRespond(body: {
     emotionTag: analysisResult.emotionTag,
     goalAchieved: false
   });
+}
+
+function ensureLatestPlayerMessage(
+  history: Message[],
+  playerMessage: string | undefined,
+  chatId: string
+): Message[] {
+  if (!playerMessage) return history;
+  const last = history[history.length - 1];
+  if (last && last.senderType === 'player' && last.content === playerMessage) {
+    return history;
+  }
+  return [...history, {
+    id: `temp_${Date.now()}`,
+    chatId,
+    senderId: 'player',
+    senderType: 'player' as const,
+    content: playerMessage,
+    createdAt: new Date()
+  }];
 }
 
 /**
@@ -308,6 +339,44 @@ async function handleUpdateMemory(body: {
       padDelta,
       emotionTag
     }
+  });
+
+  return Response.json(result);
+}
+
+/**
+ * Autonomous message decision:
+ * Character decides whether/where/what to send when player has been silent.
+ */
+async function handleAutonomousMessage(body: {
+  characterId: string;
+  currentPad?: { p: number; a: number; d: number };
+  memory?: string;
+  phaseGoal?: string;
+  dmHistory?: Message[];
+  groupHistories?: { groupId: string; groupName: string; messages: Message[] }[];
+}) {
+  const {
+    characterId,
+    currentPad = { p: 0, a: 0.5, d: 0 },
+    memory = '',
+    phaseGoal = '',
+    dmHistory = [],
+    groupHistories = [],
+  } = body;
+
+  const character = characters[characterId];
+  if (!character) {
+    return Response.json({ error: 'Character not found' }, { status: 404 });
+  }
+
+  const result = await llmDecideAutonomousMessage({
+    character,
+    state: { pad: currentPad, memory },
+    phaseGoal,
+    dmChatId: characterId,
+    dmHistory,
+    groupHistories,
   });
 
   return Response.json(result);

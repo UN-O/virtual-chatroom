@@ -27,8 +27,8 @@ export const storyPlot: StoryPlot = {
           characterId: "char_coworker",
           goal: "讓Andy知道她今天非常忙，暗示報告不關她的事",
           completionHint: "小林成功說完她很忙的理由，或Andy已知道報告是自己的事",
-          triggerDirection: "在群組說自己今天行程很滿，順帶八卦地問Andy陳副理找你什麼事",
-          location: "group",
+          triggerDirection: "私訊Andy說自己今天行程很滿，順帶問陳副理找你什麼事",
+          location: "dm",
           responseDelaySeconds: 5,
           failNudge: null
         }
@@ -389,9 +389,9 @@ export const coworkerMissions: CharacterMissions = {
     {
       phaseId: "morning",
       goal: "讓Andy知道她今天「非常忙」，暗示這份報告不是她的事",
-      triggerDirection: "主動在群組說自己今天行程很滿，順帶問Andy陳副理找你什麼事，語氣輕鬆帶點八卦",
+      triggerDirection: "主動私訊Andy說自己今天行程很滿，順帶問陳副理找你什麼事，語氣輕鬆帶點八卦",
       completionHint: "Andy說了陳副理交代報告的事，或沒說但小林已經成功撇清關係",
-      location: "group",
+      location: "dm",
       responseDelaySeconds: 5,
       failNudge: null
     },

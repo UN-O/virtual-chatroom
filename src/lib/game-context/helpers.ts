@@ -8,21 +8,52 @@
  */
 
 import { storyPlot, characters, groups } from '../story-data';
-import type { ClientSession, ChatRoom, GameSession } from '../types';
+import type { ClientSession, ChatRoom, GameSession, Phase } from '../types';
 
 /** 產生 7 碼隨機英數字 ID */
 export const generateId = (): string =>
     Math.random().toString(36).substring(2, 9);
 
+/** 1 虛擬分鐘 = 幾毫秒真實時間（2 真實分鐘 = 60 虛擬分鐘） */
+export const VIRTUAL_TIME_RATIO_MS = 2000;
+
 /**
  * 根據 phase 的虛擬時間起點 + 真實偏移毫秒數，計算虛擬時間標籤。
- * 例如：phaseVirtualTime="09:00", offsetMs=150000 → "09:02"
+ * 速率：1 虛擬分鐘 = VIRTUAL_TIME_RATIO_MS 真實毫秒
  */
 export function computeVirtualTimeLabel(phaseVirtualTime: string, offsetMs: number): string {
     const [h, m] = phaseVirtualTime.split(':').map(Number);
-    const total = h * 60 + m + Math.floor(offsetMs / 60000);
+    const total = h * 60 + m + Math.floor(offsetMs / VIRTUAL_TIME_RATIO_MS);
     const clamped = Math.max(0, Math.min(23 * 60 + 59, total));
     return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+}
+
+/**
+ * 從虛擬時間 from → to 需要多少真實毫秒。
+ * 例：from="09:00", to="14:00" → 300 虛擬分鐘 × 2000ms = 600000ms（10 真實分鐘）
+ */
+export function virtualTimeToRealMs(fromVirtualTime: string, toVirtualTime: string): number {
+    const [fh, fm] = fromVirtualTime.split(':').map(Number);
+    const [th, tm] = toVirtualTime.split(':').map(Number);
+    const diffMins = (th * 60 + tm) - (fh * 60 + fm);
+    return Math.max(0, diffMins) * VIRTUAL_TIME_RATIO_MS;
+}
+
+/**
+ * 取得此 phase 自動推進的虛擬時間目標（所有 branch nextPhase 中最早的 virtualTime）。
+ * 若沒有 branch（ending phase）則回傳 null。
+ */
+export function getPhaseCapVirtualTime(currentPhase: Phase, phases: Phase[]): string | null {
+    if (!currentPhase.branches.length) return null;
+    const nextVirtualTimes = currentPhase.branches
+        .map(b => phases.find(p => p.id === b.nextPhaseId)?.virtualTime)
+        .filter((vt): vt is string => vt != null);
+    if (!nextVirtualTimes.length) return null;
+    return nextVirtualTimes.reduce((min, vt) => {
+        const [mh, mm] = min.split(':').map(Number);
+        const [vh, vm] = vt.split(':').map(Number);
+        return vh * 60 + vm < mh * 60 + mm ? vt : min;
+    });
 }
 
 /**
