@@ -15,6 +15,7 @@ export interface GameContextType {
     activeChatId: string | null;       // 目前開啟的聊天室 ID
     chatRooms: ChatRoom[];             // DM + 群組的聊天室列表
     debugMode: boolean;
+    autonomyModes: Record<string, 'idle' | 'checking' | 'waiting-update'>;
     /** Date.now() value when the current phase started — used for phase timer bar */
     phaseStartedAt: number;
 

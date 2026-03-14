@@ -14,7 +14,10 @@ export async function llmAnalyzePlayerMessage(input: {
   character: Character;
   currentPad: PAD;
   playerMessage: string;
+  location?: 'dm' | 'group';
   focusChatId?: string;
+  groupName?: string;
+  participantNames?: Record<string, string>;
   focusContext?: Message[];
   backgroundContext?: Message[];
   chatHistory: Message[];
@@ -28,12 +31,19 @@ export async function llmAnalyzePlayerMessage(input: {
     character,
     currentPad,
     playerMessage,
+    location = 'dm',
     focusChatId,
+    groupName,
+    participantNames = {},
     focusContext = [],
     backgroundContext = [],
     chatHistory,
     traumaTriggers,
   } = input;
+
+  const sceneSummary = location === 'group'
+    ? `群組名稱：${groupName || focusChatId || '未命名群組'}\n參與者：${formatParticipantNames(participantNames)}`
+    : `聊天室：${focusChatId || character.id}（Andy 與 ${character.profile.name} 的私訊）`;
 
   const systemPrompt = `你是一個情感分析器，分析Andy訊息對角色 ${character.profile.name} 的影響。
 
@@ -49,20 +59,27 @@ ${traumaTriggers.map(t => `- ${t.id}: ${t.trigger}`).join('\n')}
 ## 當前情緒狀態
 ${describePADState(currentPad)}
 
+## 場景資訊
+位置：${location === 'group' ? '群組聊天室（多人公開對話）' : '私訊（一對一）'}
+${sceneSummary}
+
 ## 分析規則
 - padDelta 範圍：p (-0.3 ~ +0.3), a (-0.2 ~ +0.2), d (-0.2 ~ +0.2)
 - 若觸發創傷，p 應該下降 0.2-0.3
 - emotionTag 選擇：warm, cold, hurt, amused, annoyed, neutral, anxious, relieved
 - 主要脈絡優先：若主要脈絡與背景脈絡衝突，僅以主要脈絡判斷 PAD 變化
-- 背景脈絡僅作語氣與關係參考，不可主導本輪分析`;
+- 背景脈絡僅作語氣與關係參考，不可主導本輪分析
+- 若位置是群組，必須把這視為多人聊天室的公開發言，不是 Andy 與 ${character.profile.name} 的私訊
+- 若其他成員在場，他們的身份、上下文與彼此關係都會影響 ${character.profile.name} 對 Andy 訊息的感受與解讀`;
 
-  const recentContext = chatHistory.slice(-5).map(m => 
-    `${m.senderType === 'player' ? 'Andy' : character.profile.name}: ${m.content}`
-  ).join('\n');
+  const recentContext = formatAnalysisMessages(chatHistory.slice(-5), character, participantNames);
 
   const scopedContext = formatAnalysisContext({
     character,
+    location,
     focusChatId,
+    groupName,
+    participantNames,
     focusContext,
     backgroundContext,
     fallbackContext: recentContext,
@@ -105,26 +122,47 @@ Andy最新訊息：「${playerMessage}」
 
 function formatAnalysisContext(input: {
   character: Character;
+  location: 'dm' | 'group';
   focusChatId?: string;
+  groupName?: string;
+  participantNames: Record<string, string>;
   focusContext: Message[];
   backgroundContext: Message[];
   fallbackContext: string;
 }): string {
-  const { character, focusChatId, focusContext, backgroundContext, fallbackContext } = input;
+  const { character, location, focusChatId, groupName, participantNames, focusContext, backgroundContext, fallbackContext } = input;
   const hasScopedContext = focusContext.length > 0 || backgroundContext.length > 0;
   if (!hasScopedContext) return fallbackContext;
 
-  const toLines = (messages: Message[]) => {
-    if (messages.length === 0) return '（無）';
-    return messages.slice(-8).map(m => {
-      const sender = m.senderType === 'player'
-        ? 'Andy'
-        : (m.senderId === character.id ? character.profile.name : '其他角色');
-      return `${sender}: ${m.content}`;
-    }).join('\n');
-  };
+  const focusHeader = location === 'group'
+    ? `【主要脈絡｜群組: ${groupName || focusChatId || '未命名群組'}】`
+    : `【主要脈絡｜chat: ${focusChatId ?? character.id}】`;
+  const participantSummary = location === 'group'
+    ? `參與者：${formatParticipantNames(participantNames)}\n`
+    : '';
 
-  return `【主要脈絡｜chat: ${focusChatId ?? character.id}】\n${toLines(focusContext)}\n\n【背景脈絡｜僅參考】\n${toLines(backgroundContext)}`;
+  return `${focusHeader}\n${participantSummary}${formatAnalysisMessages(focusContext, character, participantNames)}\n\n【背景脈絡｜僅參考】\n${formatAnalysisMessages(backgroundContext, character, participantNames)}`;
+}
+
+function formatAnalysisMessages(messages: Message[], character: Character, participantNames: Record<string, string>): string {
+  if (messages.length === 0) return '（無）';
+
+  return messages.slice(-8).map(message => {
+    const sender = resolveParticipantName(message, character, participantNames);
+    return `${sender}: ${message.content}`;
+  }).join('\n');
+}
+
+function resolveParticipantName(message: Message, character: Character, participantNames: Record<string, string>): string {
+  if (message.senderType === 'player') return participantNames.player || 'Andy';
+  if (message.senderId === character.id) return character.profile.name;
+  if (message.senderId && participantNames[message.senderId]) return participantNames[message.senderId];
+  return message.senderId ? `角色(${message.senderId})` : '未知成員';
+}
+
+function formatParticipantNames(participantNames: Record<string, string>): string {
+  const names = Object.entries(participantNames).map(([, name]) => name);
+  return names.length > 0 ? names.join('、') : 'Andy';
 }
 
 // F4: llmUpdateMemory has been extracted to lib/engine/memory.ts

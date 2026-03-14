@@ -18,8 +18,9 @@ import { getPhaseDebugInfo } from "@/lib/engine/phase";
  * - Pending events in the virtual time engine
  */
 export function DebugPanel() {
-  const { gameState, toggleDebugMode, getCurrentPhase } = useGame();
+  const { gameState, toggleDebugMode, getCurrentPhase, autonomyModes } = useGame();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    autonomy: true,
     pad: true,
     memory: true,
     goals: true,
@@ -70,6 +71,35 @@ export function DebugPanel() {
             <div className="text-xs text-muted-foreground">
               {debugInfo.virtualTime} - {debugInfo.progressLabel}
             </div>
+          </div>
+        )}
+
+        {/* Autonomy Mode Section */}
+        <SectionHeader
+          title="Autonomy Mode"
+          expanded={expandedSections.autonomy}
+          onToggle={() => toggleSection('autonomy')}
+        />
+        {expandedSections.autonomy && (
+          <div className="mb-3 space-y-1">
+            {Object.values(characters).map(char => {
+              const mode = autonomyModes[char.id] ?? 'idle';
+              return (
+                <div key={`autonomy-${char.id}`} className="flex items-center justify-between rounded-md border border-border p-2 text-xs">
+                  <span className="font-medium text-foreground">{char.profile.name}</span>
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                      mode === 'checking' && "bg-blue-500/20 text-blue-700",
+                      mode === 'waiting-update' && "bg-amber-500/20 text-amber-700",
+                      mode === 'idle' && "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {mode}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
 

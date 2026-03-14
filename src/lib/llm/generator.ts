@@ -88,7 +88,12 @@ export async function llmGenerateGroupResponse(input: {
     state: { pad: PAD; memory: string };
     situation: {
         phaseGoal: string;
+        focusChatId?: string;
+        focusContext?: Message[];
+        backgroundContext?: Message[];
         groupHistory: Message[];
+        groupName?: string;
+        participantNames?: Record<string, string>;
         isOnline: boolean;
         urgency: 'low' | 'medium' | 'high';
     };
@@ -105,6 +110,11 @@ export async function llmGenerateGroupResponse(input: {
         phaseGoal: situation.phaseGoal,
         triggerDirection: '',
         chatHistory: situation.groupHistory,
+        focusChatId: situation.focusChatId,
+        focusContext: situation.focusContext,
+        backgroundContext: situation.backgroundContext,
+        groupName: situation.groupName,
+        participantNames: situation.participantNames,
         isOnline: situation.isOnline,
         location: 'group',
     })}
@@ -142,8 +152,11 @@ function buildScriptwriterPrompt(
         triggerDirection: string;
         chatHistory: Message[];
         focusChatId?: string;
+        groupName?: string;
+        participantNames?: Record<string, string>;
         focusContext?: Message[];
         backgroundContext?: Message[];
+        currentVirtualTimeLabel?: string;
         isOnline: boolean;
         location: 'dm' | 'group';
     }
@@ -158,7 +171,22 @@ function buildScriptwriterPrompt(
         ? character.psychology.traumas.map(t => t.description).join('；')
         : '（無）';
 
-    const locationLabel = situation.location === 'dm' ? '私訊（一對一）' : '群組（多人）';
+    const locationLabel = situation.location === 'dm' ? '私訊（一對一）' : `群組（多人，公開發言）${situation.groupName ? `｜${situation.groupName}` : ''}`;
+    const participantSummary = situation.location === 'group'
+        ? `群組參與者：${formatParticipantSummary(situation.participantNames)}\n`
+        : '';
+    const publicSpeakingRules = situation.location === 'group'
+        ? `
+11. **群組公開發言**：這是在多人聊天室公開說話，不是只對 Andy 的私訊
+12. **可見性意識**：回應時要記得其他成員都在場，也都看得到
+13. **點名方式**：若回應 Andy 或其他成員，直接用名稱或職稱點名，不要寫成私聊口吻`
+        : '';
+    const currentVirtualTime = resolveCurrentVirtualTimeLabel({
+        currentVirtualTimeLabel: situation.currentVirtualTimeLabel,
+        fallbackHistory: situation.chatHistory,
+        focusContext: situation.focusContext,
+        backgroundContext: situation.backgroundContext,
+    });
 
     return `# 角色設定卡 — ${character.profile.name}
 
@@ -191,20 +219,28 @@ ${state.memory || '還沒有特別的印象。'}
 
 # 當前場景
 場景：${locationLabel}
+目前虛擬時間：${currentVirtualTime}
 本幕目標：${situation.phaseGoal}
 ${situation.triggerDirection ? `發訊方向：${situation.triggerDirection}` : ''}
 ${!situation.isOnline ? `⚠️ 目前離線（休息中）：Andy 在你非上班/休息時傳訊給你，回應時語氣帶不悅或不情願，簡短冷淡即可。` : ''}
 
 # 對話脈絡
 ${formatConversationContexts({
-    character,
-    location: situation.location,
-    focusChatId: situation.focusChatId,
-    focusContext: situation.focusContext,
-    backgroundContext: situation.backgroundContext,
-    fallbackHistory: situation.chatHistory,
-})}
+        character,
+        location: situation.location,
+        focusChatId: situation.focusChatId,
+    groupName: situation.groupName,
+    participantNames: situation.participantNames,
+        focusContext: situation.focusContext,
+        backgroundContext: situation.backgroundContext,
+        fallbackHistory: situation.chatHistory,
+    })}
 
+${participantSummary}${situation.location === 'group' ? `焦點聊天室：${situation.focusChatId || 'group'}\n` : ''}本幕目標：${situation.phaseGoal}
+${situation.triggerDirection ? `發訊方向：${situation.triggerDirection}` : ''}
+
+    groupName: situation.groupName,
+    participantNames: situation.participantNames,
 ---
 
 # 你的工作
@@ -221,12 +257,12 @@ ${formatConversationContexts({
 7. **不重複**：不重複對話紀錄中已說過的內容
 8. **聚焦主脈絡**：若「主要脈絡」與「背景脈絡」衝突，一律以主要脈絡為準
 9. **回覆目標限定**：本輪回覆必須直接對應主要脈絡裡 Andy 的最新訊息
-10. **背景僅參考**：不得把背景脈絡中的他人話題當成本輪主要回覆目標`;
+10. **背景僅參考**：不得把背景脈絡中的他人話題當成本輪主要回覆目標${publicSpeakingRules}`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatChatHistory(messages: Message[], character: Character): string {
+function formatChatHistory(messages: Message[], character: Character, participantNames: Record<string, string> = {}): string {
     const recent = messages.slice(-20);
     if (recent.length === 0) return '（無對話紀錄）';
 
@@ -235,44 +271,94 @@ function formatChatHistory(messages: Message[], character: Character): string {
     const hasMixedChats = chatIds.length > 1;
 
     return recent.map(msg => {
-        let roleLabel = 'Andy';
-        if (msg.senderType === 'character') {
-            roleLabel = msg.senderId === character.id
-                ? character.profile.name
-                : '（其他角色）';
-        }
+        const roleLabel = getMessageSpeakerLabel(msg, character, participantNames);
         const chatTag = hasMixedChats
             ? (msg.chatId === character.id ? '[私訊] ' : '[群組] ')
             : '';
-        return `${chatTag}${roleLabel}：${msg.content}`;
+        const timestamp = formatMessageTimestamp(msg);
+        return `${chatTag}[${timestamp}] ${roleLabel}：${msg.content}`;
     }).join('\n');
+}
+
+function resolveCurrentVirtualTimeLabel(input: {
+    currentVirtualTimeLabel?: string;
+    fallbackHistory: Message[];
+    focusContext?: Message[];
+    backgroundContext?: Message[];
+}): string {
+    if (input.currentVirtualTimeLabel?.trim()) return input.currentVirtualTimeLabel.trim();
+
+    const orderedCandidates = [
+        ...(input.focusContext || []),
+        ...(input.backgroundContext || []),
+        ...input.fallbackHistory,
+    ];
+
+    const latestWithVirtualLabel = [...orderedCandidates].reverse().find(msg => msg.virtualTimeLabel?.trim());
+    if (latestWithVirtualLabel?.virtualTimeLabel) return latestWithVirtualLabel.virtualTimeLabel.trim();
+
+    const latestMessage = [...orderedCandidates].reverse().find(Boolean);
+    if (!latestMessage) return '未知';
+
+    return formatCreatedAtLabel(latestMessage.createdAt);
+}
+
+function formatMessageTimestamp(message: Message): string {
+    if (message.virtualTimeLabel?.trim()) return message.virtualTimeLabel.trim();
+    return formatCreatedAtLabel(message.createdAt);
+}
+
+function formatCreatedAtLabel(createdAt: Date): string {
+    const safeDate = createdAt instanceof Date ? createdAt : new Date(createdAt);
+    if (Number.isNaN(safeDate.getTime())) return '未知時間';
+
+    const hours = String(safeDate.getHours()).padStart(2, '0');
+    const minutes = String(safeDate.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
 }
 
 function formatConversationContexts(input: {
     character: Character;
     location: 'dm' | 'group';
     focusChatId?: string;
+    groupName?: string;
+    participantNames?: Record<string, string>;
     focusContext?: Message[];
     backgroundContext?: Message[];
     fallbackHistory: Message[];
 }): string {
-    const { character, location, focusChatId, focusContext = [], backgroundContext = [], fallbackHistory } = input;
+    const { character, location, focusChatId, groupName, participantNames = {}, focusContext = [], backgroundContext = [], fallbackHistory } = input;
 
     const hasScopedContext = focusContext.length > 0 || backgroundContext.length > 0;
     if (!hasScopedContext) {
-        return formatChatHistory(fallbackHistory, character);
+        return formatChatHistory(fallbackHistory, character, participantNames);
     }
 
     const focusLabel = location === 'dm'
         ? `私訊主脈絡（chat: ${focusChatId ?? character.id}）`
-        : `群組主脈絡（chat: ${focusChatId ?? 'group'}）`;
+        : `群組主脈絡（群組：${groupName ?? focusChatId ?? 'group'} / chat: ${focusChatId ?? 'group'}）`;
+    const participantSummary = location === 'group'
+        ? `參與者：${formatParticipantSummary(participantNames)}\n`
+        : '';
 
-    const focusText = formatChatHistory(focusContext, character);
+    const focusText = formatChatHistory(focusContext, character, participantNames);
     const backgroundText = backgroundContext.length > 0
-        ? formatChatHistory(backgroundContext, character)
+        ? formatChatHistory(backgroundContext, character, participantNames)
         : '（無背景脈絡）';
 
-    return `## 主要脈絡（必須優先回應）\n${focusLabel}\n${focusText}\n\n## 背景脈絡（僅參考，不可覆寫主要脈絡）\n${backgroundText}`;
+    return `## 主要脈絡（必須優先回應）\n${focusLabel}\n${participantSummary}${focusText}\n\n## 背景脈絡（僅參考，不可覆寫主要脈絡）\n${backgroundText}`;
+}
+
+function getMessageSpeakerLabel(message: Message, character: Character, participantNames: Record<string, string>): string {
+    if (message.senderType === 'player') return participantNames.player || 'Andy';
+    if (message.senderId === character.id) return character.profile.name;
+    if (message.senderId && participantNames[message.senderId]) return participantNames[message.senderId];
+    return message.senderId ? `角色(${message.senderId})` : '未知成員';
+}
+
+function formatParticipantSummary(participantNames?: Record<string, string>): string {
+    const names = Object.entries(participantNames || {}).map(([, name]) => name);
+    return names.length > 0 ? names.join('、') : 'Andy';
 }
 
 function getExpressionKey(pad: PAD): string {
@@ -332,6 +418,16 @@ const autonomousDecisionSchema = z.object({
 
 export type AutonomousDecision = z.infer<typeof autonomousDecisionSchema>;
 
+const autonomousPromptSchema = z.object({
+    reason: z.string().describe('為什麼現在要催促，25 字以內'),
+    targetChatId: z.string().describe('傳送目標：DM 填入角色 ID，群組填入群組 ID'),
+    targetType: z.enum(['dm', 'group']).describe('傳送通道類型'),
+    content: z.string().describe('催促訊息內容，10–30 字，繁體中文'),
+    expressionKey: z.string().describe('表情鍵值：neutral / happy / sad / angry / surprised'),
+});
+
+export type AutonomousPrompt = z.infer<typeof autonomousPromptSchema>;
+
 /**
  * llmDecideAutonomousMessage
  * 角色主動發訊息決策器。
@@ -351,7 +447,7 @@ export async function llmDecideAutonomousMessage(input: {
     const dmLines = dmHistory.length > 0
         ? dmHistory.slice(-8).map(m =>
             `${m.senderType === 'player' ? 'Andy' : character.profile.name}：${m.content}`
-          ).join('\n')
+        ).join('\n')
         : '（無對話）';
 
     const groupSections = groupHistories.map(g => {
@@ -418,6 +514,100 @@ ${availableTargets}
             targetChatId: dmChatId,
             targetType: 'dm',
             content: '',
+            expressionKey: 'neutral',
+        };
+    }
+}
+
+/**
+ * llmGenerateAutonomousPrompt
+ * 在角色已長時間等待且外部資訊沒有更新時，產生第一次或第二次催促訊息。
+ */
+export async function llmGenerateAutonomousPrompt(input: {
+    character: Character;
+    state: { pad: PAD; memory: string };
+    phaseGoal: string;
+    promptLevel: 1 | 2;
+    dmChatId: string;
+    dmHistory: Message[];
+    groupHistories: { groupId: string; groupName: string; messages: Message[] }[];
+}): Promise<AutonomousPrompt> {
+    const { character, state, phaseGoal, promptLevel, dmChatId, dmHistory, groupHistories } = input;
+
+    const dmLines = dmHistory.length > 0
+        ? dmHistory.slice(-8).map(m =>
+            `${m.senderType === 'player' ? 'Andy' : character.profile.name}：${m.content}`
+        ).join('\n')
+        : '（無對話）';
+
+    const groupSections = groupHistories.map(g => {
+        const lines = g.messages.slice(-8).map(m => {
+            const label = m.senderType === 'player' ? 'Andy'
+                : (m.senderId === character.id ? character.profile.name : '（其他人）');
+            return `${label}：${m.content}`;
+        }).join('\n') || '（無對話）';
+        return `### ${g.groupName}\n${lines}`;
+    }).join('\n\n');
+
+    const availableTargets = [
+        `- dm (chatId: ${dmChatId})：私訊 Andy`,
+        ...groupHistories.map(g => `- group (chatId: ${g.groupId})：群組「${g.groupName}」`),
+    ].join('\n');
+
+    const urgencyHint = promptLevel === 1
+        ? '這是第一次催促，語氣可以自然提醒，不要太重。'
+        : '這是第二次催促，語氣可以比第一次更明確，但仍要符合角色設定。';
+
+    const systemPrompt = `# 角色設定 — ${character.profile.name}
+${character.profile.description}
+個性：${character.personality.description}
+核心動機：${character.psychology.coreMotivation}
+說話風格：${character.speechStyle.description}
+口頭禪：${character.speechStyle.catchphrases.join('、') || '（無）'}
+絕對不說：${character.speechStyle.forbiddenWords.join('、') || '（無）'}
+
+# 當前狀態
+${describePADState(state.pad)}
+記憶：${state.memory || '無特別印象'}
+本幕目標：${phaseGoal}
+
+# 任務
+Andy 已經超過一分鐘沒有提供任何新資訊，你要主動送出第 ${promptLevel} 次催促訊息。
+${urgencyHint}
+
+## 可傳送頻道
+${availableTargets}
+
+## 規則
+- 一定要輸出一則催促訊息
+- 訊息要短，自然，不要像系統通知
+- 繁體中文，不加括號動作描述
+- 長度：10–30 字`;
+
+    const prompt = `# 私訊對話紀錄\n${dmLines}\n\n# 群組對話紀錄\n${groupSections || '（無群組）'}`;
+
+    try {
+        const { output } = await generateText({
+            model: getModel(),
+            output: Output.object({ schema: autonomousPromptSchema }),
+            system: systemPrompt,
+            prompt,
+            providerOptions: {
+                google: {
+                    thinkingConfig: { thinkingBudget: 0 },
+                } satisfies GoogleLanguageModelOptions,
+            },
+        });
+
+        console.log(`[AutonomousPrompt] ${character.profile.name} level ${promptLevel}:`, output);
+        return output;
+    } catch (error) {
+        console.error('[AutonomousPrompt] Error generating prompt:', error);
+        return {
+            reason: 'LLM error',
+            targetChatId: dmChatId,
+            targetType: 'dm',
+            content: promptLevel === 1 ? '你那邊方便回我一下嗎？' : '我這邊還在等你的回覆。',
             expressionKey: 'neutral',
         };
     }

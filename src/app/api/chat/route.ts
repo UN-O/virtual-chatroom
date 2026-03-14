@@ -3,7 +3,8 @@ import type { Message } from '@/lib/types';
 import { 
   llmGenerateCharacterMessage, 
   llmGenerateGroupResponse,
-  llmDecideAutonomousMessage
+  llmDecideAutonomousMessage,
+  llmGenerateAutonomousPrompt
 } from '@/lib/llm/generator';
 import { 
   llmAnalyzePlayerMessage, 
@@ -24,6 +25,7 @@ import {
  * - 'decideGroup': F6 - Decide if should respond to group
  * - 'updateMemory': F4 - Update character memory
  * - 'autonomousMessage': New action for autonomous message handling
+ * - 'autonomousPrompt': Generate first/second follow-up prompt after silence
  */
 export async function POST(req: Request) {
   const body = await req.json();
@@ -48,6 +50,9 @@ export async function POST(req: Request) {
       
       case 'autonomousMessage':
         return handleAutonomousMessage(body);
+
+      case 'autonomousPrompt':
+        return handleAutonomousPrompt(body);
 
       case 'respond':
       default:
@@ -171,14 +176,27 @@ function ensureLatestPlayerMessage(
 async function handleAnalyze(body: {
   characterId: string;
   playerMessage: string;
+  focusChatId?: string;
+  focusContext?: Message[];
+  backgroundContext?: Message[];
   chatHistory?: Message[];
   currentPad?: { p: number; a: number; d: number };
+  location?: 'dm' | 'group';
+  groupName?: string;
+  participantIds?: string[];
+  participantNames?: Record<string, string>;
 }) {
   const { 
     characterId, 
     playerMessage, 
+    focusChatId,
+    focusContext = [],
+    backgroundContext = [],
     chatHistory = [],
-    currentPad = { p: 0, a: 0.5, d: 0.5 }
+    currentPad = { p: 0, a: 0.5, d: 0.5 },
+    location = 'dm',
+    groupName,
+    participantNames = {}
   } = body;
 
   const character = characters[characterId];
@@ -186,11 +204,22 @@ async function handleAnalyze(body: {
     return Response.json({ error: 'Character not found' }, { status: 404 });
   }
 
+  const resolvedHistory = ensureLatestPlayerMessage(chatHistory, playerMessage, focusChatId ?? characterId);
+  const resolvedFocusContext = focusContext.length > 0
+    ? ensureLatestPlayerMessage(focusContext, playerMessage, focusChatId ?? characterId)
+    : resolvedHistory;
+
   const result = await llmAnalyzePlayerMessage({
     character,
     currentPad,
     playerMessage,
-    chatHistory,
+    focusChatId,
+    focusContext: resolvedFocusContext,
+    backgroundContext,
+    chatHistory: resolvedHistory,
+    location,
+    groupName,
+    participantNames,
     traumaTriggers: character.psychology.traumas
   });
 
@@ -232,7 +261,13 @@ async function handleCheckGoal(body: {
  */
 async function handleGroupRespond(body: {
   characterId: string;
+  focusChatId?: string;
+  focusContext?: Message[];
+  backgroundContext?: Message[];
   groupHistory?: Message[];
+  groupName?: string;
+  participantIds?: string[];
+  participantNames?: Record<string, string>;
   currentPad?: { p: number; a: number; d: number };
   memory?: string;
   phaseGoal?: string;
@@ -240,7 +275,12 @@ async function handleGroupRespond(body: {
 }) {
   const { 
     characterId, 
+    focusChatId,
+    focusContext = [],
+    backgroundContext = [],
     groupHistory = [],
+    groupName,
+    participantNames = {},
     currentPad = { p: 0, a: 0.5, d: 0.5 },
     memory = '',
     phaseGoal = '',
@@ -257,7 +297,12 @@ async function handleGroupRespond(body: {
     state: { pad: currentPad, memory },
     situation: {
       phaseGoal,
+      focusChatId,
+      focusContext,
+      backgroundContext,
       groupHistory,
+      groupName,
+      participantNames,
       isOnline: true,
       urgency
     }
@@ -374,6 +419,43 @@ async function handleAutonomousMessage(body: {
     character,
     state: { pad: currentPad, memory },
     phaseGoal,
+    dmChatId: characterId,
+    dmHistory,
+    groupHistories,
+  });
+
+  return Response.json(result);
+}
+
+async function handleAutonomousPrompt(body: {
+  characterId: string;
+  currentPad?: { p: number; a: number; d: number };
+  memory?: string;
+  phaseGoal?: string;
+  promptLevel: 1 | 2;
+  dmHistory?: Message[];
+  groupHistories?: { groupId: string; groupName: string; messages: Message[] }[];
+}) {
+  const {
+    characterId,
+    currentPad = { p: 0, a: 0.5, d: 0 },
+    memory = '',
+    phaseGoal = '',
+    promptLevel,
+    dmHistory = [],
+    groupHistories = [],
+  } = body;
+
+  const character = characters[characterId];
+  if (!character) {
+    return Response.json({ error: 'Character not found' }, { status: 404 });
+  }
+
+  const result = await llmGenerateAutonomousPrompt({
+    character,
+    state: { pad: currentPad, memory },
+    phaseGoal,
+    promptLevel,
     dmChatId: characterId,
     dmHistory,
     groupHistories,

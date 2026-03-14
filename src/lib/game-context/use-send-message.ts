@@ -155,7 +155,6 @@ export function useSendMessage({
         // ── DM ───────────────────────────────────────────────────────────────
         const char = characters[chatId];
         if (char) {
-            cancelAutonomousCheck(chatId);
             const { seq, signal } = startLatestDMRequest(chatId);
             handleDM({
                 chatId, content, cur,
@@ -170,7 +169,7 @@ export function useSendMessage({
         // ── 群組 ─────────────────────────────────────────────────────────────
         const group = groups.find(g => g.id === chatId);
         if (group) {
-            group.members.forEach(memberId => cancelAutonomousCheck(memberId));
+            group.members.forEach(memberId => vtCancelNudge(memberId));
             const { seq, signal } = startLatestGroupRequest(chatId);
             handleGroup({
                 group, chatId, content, cur,
@@ -180,7 +179,7 @@ export function useSendMessage({
                 isLatestGroupRequest,
             });
         }
-    }, [vtCancelNudge, vtScheduleNudge, sessionRef, getVirtualTimeLabel, setSession, resetNudgeCount, startLatestDMRequest, isLatestDMRequest, startLatestGroupRequest, isLatestGroupRequest, cancelAutonomousCheck]);
+    }, [vtCancelNudge, vtScheduleNudge, sessionRef, getVirtualTimeLabel, setSession, resetNudgeCount, startLatestDMRequest, isLatestDMRequest, startLatestGroupRequest, isLatestGroupRequest]);
 
     return { sendMessage, startAutonomousCheck, isLatestAutonomousCheck, cancelAutonomousCheck };
 }
@@ -462,7 +461,7 @@ function handleDM({
 // ── Group Handler ─────────────────────────────────────────────────────────────
 
 interface HandleGroupOptions {
-    group: { id: string; members: string[] };
+    group: { id: string; name: string; members: string[] };
     chatId: string;
     content: string;
     cur: ClientSession;
@@ -474,11 +473,43 @@ interface HandleGroupOptions {
     isLatestGroupRequest: (chatId: string, seq: number) => boolean;
 }
 
+function buildGroupScenePayload(group: { id: string; name: string; members: string[] }, content: string, groupHistory: Message[]) {
+    const latestPlayerMessage: Message = {
+        id: 'temp',
+        chatId: group.id,
+        senderType: 'player',
+        senderId: 'player',
+        content,
+        createdAt: new Date()
+    };
+    const participantIds = ['player', ...group.members];
+    const participantNames = participantIds.reduce<Record<string, string>>((acc, participantId) => {
+        if (participantId === 'player') {
+            acc[participantId] = 'Andy';
+            return acc;
+        }
+
+        acc[participantId] = characters[participantId]?.profile.name || participantId;
+        return acc;
+    }, {});
+
+    return {
+        focusChatId: group.id,
+        focusContext: [...groupHistory, latestPlayerMessage],
+        backgroundContext: [] as Message[],
+        groupHistory: [...groupHistory, latestPlayerMessage],
+        groupName: group.name,
+        participantIds,
+        participantNames,
+    };
+}
+
 function handleGroup({
     group, chatId, content, cur,
     getVirtualTimeLabel, setSession, vtScheduleNudge, groupRequestSeq, groupRequestSignal, isLatestGroupRequest,
 }: HandleGroupOptions) {
     const groupHistory = cur.messages.filter(m => m.chatId === chatId).slice(-15);
+    const groupScene = buildGroupScenePayload(group, content, groupHistory);
 
     group.members.forEach(memberId => {
         if (!isLatestGroupRequest(chatId, groupRequestSeq)) return;
@@ -492,12 +523,6 @@ function handleGroup({
         const mission = currentPhase?.characterMissions.find(m => m.characterId === memberId);
         const tDelay = (mission?.responseDelaySeconds ?? 5) * 1000;
 
-        // 群組回應只使用群組歷史，避免 DM 頻道語境污染群組回覆
-        const combinedHistory: Message[] = [
-            ...groupHistory,
-            { id: 'temp', chatId, senderType: 'player' as const, senderId: 'player', content, createdAt: new Date() }
-        ];
-
         const tStart = Date.now();
 
         // F2 (group respond) + F3 (analyze PAD) in parallel
@@ -509,7 +534,13 @@ function handleGroup({
                 body: JSON.stringify({
                     action: 'groupRespond',
                     characterId: memberId,
-                    groupHistory: combinedHistory,
+                    focusChatId: groupScene.focusChatId,
+                    focusContext: groupScene.focusContext,
+                    backgroundContext: groupScene.backgroundContext,
+                    groupHistory: groupScene.groupHistory,
+                    groupName: groupScene.groupName,
+                    participantIds: groupScene.participantIds,
+                    participantNames: groupScene.participantNames,
                     currentPad: memberState.pad,
                     memory: memberState.memory || '',
                     phaseGoal: mission?.goal || '',
@@ -525,7 +556,14 @@ function handleGroup({
                     action: 'analyze',
                     characterId: memberId,
                     playerMessage: content,
-                    chatHistory: groupHistory,
+                    focusChatId: groupScene.focusChatId,
+                    focusContext: groupScene.focusContext,
+                    backgroundContext: groupScene.backgroundContext,
+                    chatHistory: groupScene.groupHistory,
+                    location: 'group',
+                    groupName: groupScene.groupName,
+                    participantIds: groupScene.participantIds,
+                    participantNames: groupScene.participantNames,
                     currentPad: memberState.pad
                 })
             }).then(r => r.json()).catch(() => null)
